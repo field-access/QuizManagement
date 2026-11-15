@@ -1,4 +1,4 @@
-const K={sessions:"examflow_sessions_v2",results:"examflow_results_v2",goal:"examflow_goal_v2",plans:"examflow_plans_v2",settings:"examflow_settings_v2",exams:"examflow_exams_v1",recent:"examflow_recent_quizzes_v1",pomodoroStats:"examflow_pomodoro_stats_v1"};
+const K={sessions:"examflow_sessions_v2",results:"examflow_results_v2",goal:"examflow_goal_v2",plans:"examflow_plans_v2",settings:"examflow_settings_v2",exams:"examflow_exams_v1",recent:"examflow_recent_quizzes_v1",promptLibrary:"examflow_prompt_library_v1"};
 const sampleQuestions=[
 {text:"Which algorithm guarantees shortest paths from a source when edge weights are non-negative?",options:["DFS","Dijkstra's algorithm"],answer:"B",marks:2,negativeMarks:.5},
 {text:"What is the average-case lookup complexity of a good hash table?",options:["$O(1)$","$O(\\log n)$"],answer:"A"},
@@ -8,55 +8,6 @@ let questions=[],answers=[],reviews=new Set(),checkedQuestions=new Set(),current
 let examFinished=false;
 let examId=null;
 let timerState={examSeconds:5*60,practiceSeconds:5*60,running:false};
-let universalStudyTimerSeconds = 0;
-let universalStudyTimerRunning = true;
-let universalStudyTimerMode = 'stopwatch'; // 'stopwatch' or 'countdown'
-let pomodoroCycle = 0;
-let pomodoroPhase = 'focus';
-let pomodoroStats = {sessions:0,minutes:0};
-
-function loadPomodoroStats(){
-  const saved=get(K.pomodoroStats,{});
-  return {sessions:Math.max(0,Number(saved.sessions)||0),minutes:Math.max(0,Number(saved.minutes)||0)};
-}
-function savePomodoroStats(){put(K.pomodoroStats,pomodoroStats)}
-
-function setPomodoro(val) {
-  if(val === 'stopwatch') {
-    universalStudyTimerMode = 'stopwatch';
-    universalStudyTimerSeconds = 0;
-  } else {
-    universalStudyTimerMode = 'countdown';
-    universalStudyTimerSeconds = parseInt(val, 10) * 60;
-  }
-  universalStudyTimerRunning = true;
-  pomodoroPhase = val === 'stopwatch' ? 'stopwatch' : (val === '5' || val === '15' ? 'break' : 'focus');
-  const btn = document.getElementById("universalTimerToggleBtn");
-  if(btn) btn.textContent = "⏸ Pause";
-  updateUniversalTimerUI();
-}
-
-function toggleUniversalTimer() {
-  universalStudyTimerRunning = !universalStudyTimerRunning;
-  const btn = document.getElementById("universalTimerToggleBtn");
-  if(btn) {
-    btn.textContent = universalStudyTimerRunning ? "⏸ Pause" : "▶ Resume";
-  }
-}
-
-function updateUniversalTimerUI() {
-  const gt = document.getElementById("globalTimer");
-  if(gt) {
-    const hrs = Math.floor(Math.abs(universalStudyTimerSeconds) / 3600);
-    const mins = Math.floor((Math.abs(universalStudyTimerSeconds) % 3600) / 60);
-    const secs = Math.abs(universalStudyTimerSeconds) % 60;
-    const sign = universalStudyTimerSeconds < 0 ? "-" : "";
-    gt.textContent = `${sign}${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  }
-  const phase=document.getElementById("pomodoroPhase");
-  if(phase)phase.textContent=universalStudyTimerMode==='stopwatch'?'Open study timer':(pomodoroPhase==='break'?'Break':'Focus');
-  document.querySelectorAll("#pomodoroDots i").forEach((dot,i)=>dot.classList.toggle("active",i<=pomodoroCycle%4));
-}
 let matchOrders={};
 let settings=loadSettings();
 restoreFromPersistentStorage().then(()=>{
@@ -76,8 +27,6 @@ function put(k,v){
   }
   schedulePersistentBackup();
 }
-pomodoroStats=loadPomodoroStats();
-
 /* Persistent data backup: IndexedDB is substantially larger than localStorage.
    localStorage remains the fast synchronous cache, while IndexedDB protects
    quizzes/results/sessions if the browser evicts or fills the cache. */
@@ -104,7 +53,9 @@ async function savePersistentBackup(){
       tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
     });
     db.close();
+    return true;
   }catch(e){}
+  return false;
 }
 async function restorePersistentBackup(){
   try{
@@ -184,22 +135,20 @@ function renderTodos() {
   const container = document.getElementById("todoListContainer");
   if(!container) return;
   const todos = get("examflow_todos_v1", []);
+  const completed=todos.filter(todo=>todo.done).length;
+  const summary=document.getElementById("todoSummary");
+  if(summary)summary.textContent=`${todos.length} task${todos.length===1?"":"s"}${completed?` · ${completed} done`:""}`;
   if(!todos.length) {
-    container.innerHTML = "<div class='empty'>No todos yet. Add one above!</div>";
+    container.innerHTML = "<div class='todo-empty'><strong>Nothing on your list yet</strong><span>Add a small study goal to get started.</span></div>";
     return;
   }
-  container.innerHTML = todos.map((t, i) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: ${t.done ? 'var(--surface2)' : 'var(--surface)'};">
-      <div style="display:flex; align-items:center; gap: 10px; ${t.done ? 'text-decoration:line-through; opacity: 0.6;' : ''}">
-        <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTodo(${i})" style="accent-color: var(--primary); width:16px; height:16px; cursor:pointer;">
-        <div>
-          <strong>${esc(t.text)}</strong>
-          ${t.deadline ? `<small style="display:block; color:var(--muted); font-size:10px;">Deadline: ${esc(t.deadline)}</small>` : ''}
-        </div>
-      </div>
-      <button class="session-delete" onclick="deleteTodo(${i})">×</button>
-    </div>
-  `).join("");
+  container.innerHTML = todos.map((todo,index)=>{
+    const deadline=todo.deadline?new Date(`${todo.deadline}T12:00:00`).toLocaleDateString(undefined,{month:"short",day:"numeric"}):"";
+    return `<article class="todo-item${todo.done?" is-done":""}">
+      <label class="todo-item-label"><input type="checkbox" ${todo.done?"checked":""} onchange="toggleTodo(${index})"><span class="todo-checkmark" aria-hidden="true"></span><span class="todo-item-copy"><strong>${esc(todo.text)}</strong>${deadline?`<small>Due ${esc(deadline)}</small>`:""}</span></label>
+      <button class="todo-delete" type="button" aria-label="Delete ${esc(todo.text)}" onclick="deleteTodo(${index})">×</button>
+    </article>`;
+  }).join("");
 }
 
 function addTodo() {
@@ -315,40 +264,76 @@ async function restoreFromPersistentStorage(){
 
 async function requestPersistentStorage(){
   try{
-    if(navigator.storage && navigator.storage.persist){
-      await navigator.storage.persist();
-    }
+    if(navigator.storage && navigator.storage.persist)return await navigator.storage.persist();
   }catch(e){}
+  return false;
+}
+async function protectBrowserStorage(){
+ const status=document.getElementById("persistentStorageStatus");
+ if(!navigator.storage?.persist){if(status)status.textContent="This browser does not support persistent storage protection.";return}
+ const protectedStorage=await requestPersistentStorage();
+ if(status)status.textContent=protectedStorage?"Browser storage is protected from automatic cleanup.":"Protection was not granted; export a JSON backup regularly.";
+ updatePersistentStorageInfo();
+}
+async function retryPersistentBackup(){
+ const status=document.getElementById("persistentStorageStatus");
+ const saved=await savePersistentBackup();
+ if(status)status.textContent=saved?"Local backup saved successfully.":"Could not save the local backup. Export a JSON backup to keep a copy.";
+ updatePersistentStorageInfo();
+}
+async function updatePersistentStorageInfo(){
+ const capacity=document.getElementById("persistentStorageCapacity");
+ if(!capacity)return;
+ const storage=navigator.storage;
+ if(!storage?.estimate){capacity.textContent="Storage usage details are unavailable in this browser.";return}
+ try{
+  const [estimate,persistent]=await Promise.all([storage.estimate(),storage.persisted?.()]);
+  const format=bytes=>bytes>=1073741824?`${(bytes/1073741824).toFixed(1)} GB`:bytes>=1048576?`${(bytes/1048576).toFixed(1)} MB`:`${Math.ceil(bytes/1024)} KB`;
+  capacity.textContent=estimate.quota?`${format(estimate.usage||0)} used of ${format(estimate.quota)} browser allowance · ${persistent?"Persistence granted":"Best-effort storage"}`:"Browser storage capacity is not reported.";
+ }catch(error){
+  capacity.textContent="Could not read browser storage usage.";
+  console.warn("Could not read browser storage information:",error);
+ }
 }
 /* EXAMFLOW_PERSISTENT_BACKUP_END */
 
 function loadSettings(){
- const s=Object.assign({theme:"light",defaultMode:"exam",fontFamily:"System Default",colorScheme:"classic",soundEnabled:true,examCardWidth:"balanced",instantFeedback:false,defaultDuration:5,defaultMarks:1,defaultNegative:0},get(K.settings,{}));
+ const s=Object.assign({theme:"light",defaultMode:"exam",fontFamily:"DM Sans",questionTextSize:"standard",colorScheme:"classic",soundEnabled:true,examCardWidth:"balanced",instantFeedback:false,defaultDuration:5,defaultMarks:1,defaultNegative:0},get(K.settings,{}));
+ const fonts=["System Default","Serif Elegant","Modern Rounded","Monospace","Source Serif","Libre Baskerville","Lora","DM Sans","Nunito Sans","Inter","Roboto","Open Sans","Manrope","Merriweather","IBM Plex Mono","JetBrains Mono","Fira Code"];
+ if(!fonts.includes(s.fontFamily))s.fontFamily="DM Sans";
+ if(!["exam","practice"].includes(s.defaultMode))s.defaultMode="exam";
+ if(!["small","standard","large","extra-large"].includes(s.questionTextSize))s.questionTextSize="standard";
  s.defaultDuration=[5,10,15,20,30,45,60].includes(Number(s.defaultDuration))?Number(s.defaultDuration):5;
  return s;
 }
 function saveSettings(){
   const feedbackToggle=document.getElementById("instantFeedback");
   if(feedbackToggle)settings.instantFeedback=feedbackToggle.checked;
-  settings.defaultDuration=[5,10,15,20,30,45,60].includes(Number(document.getElementById("defaultDuration").value))?Number(document.getElementById("defaultDuration").value):5;
-  settings.defaultMarks=Number(document.getElementById("defaultMarks").value||1);
-  settings.defaultNegative=Number(document.getElementById("defaultNegative").value||0);
+  const duration=document.getElementById("defaultDuration");
+  if(duration)settings.defaultDuration=[5,10,15,20,30,45,60].includes(Number(duration.value))?Number(duration.value):5;
   const fs=document.getElementById("fontSelect");if(fs)settings.fontFamily=fs.value;
-  const cs=document.getElementById("colorSchemeSelect");if(cs)settings.colorScheme=cs.value;
+  const cs=document.querySelector('input[name="colorScheme"]:checked');if(cs)settings.colorScheme=cs.value;
   const cw=document.getElementById("examCardWidthSelect");if(cw)settings.examCardWidth=cw.value;
+  const textSize=document.getElementById("questionTextSizeSelect");if(textSize)settings.questionTextSize=textSize.value;
   put(K.settings,settings);applySettings();
 }
 function applySettings(){
  settings.defaultDuration=[5,10,15,20,30,45,60].includes(Number(settings.defaultDuration))?Number(settings.defaultDuration):5;
  document.body.classList.toggle("dark",settings.theme==="dark");updateTheme();
  const d=document.getElementById("defaultDuration");if(d)d.value=String(settings.defaultDuration);
- const fs=document.getElementById("fontSelect");if(fs)fs.value=settings.fontFamily||"System Default";
+ const fs=document.getElementById("fontSelect");if(fs)fs.value=settings.fontFamily||"DM Sans";
+ const textSizes=["small","standard","large","extra-large"];
+ const textSize=textSizes.includes(settings.questionTextSize)?settings.questionTextSize:"standard";
+ settings.questionTextSize=textSize;
+ document.body.classList.remove(...textSizes.map(x=>`question-text-${x}`));
+ document.body.classList.add(`question-text-${textSize}`);
+ const textSizeSelect=document.getElementById("questionTextSizeSelect");if(textSizeSelect)textSizeSelect.value=textSize;
  const schemes=["classic","ocean","forest","sunset","slate"];
  document.body.classList.remove(...schemes.map(x=>`scheme-${x}`));
  const scheme=schemes.includes(settings.colorScheme)?settings.colorScheme:"classic";
  settings.colorScheme=scheme;
  document.body.classList.add(`scheme-${scheme}`);
- const cs=document.getElementById("colorSchemeSelect");if(cs)cs.value=scheme;
+ document.querySelectorAll('input[name="colorScheme"]').forEach(input=>input.checked=input.value===scheme);
  const widths=["compact","balanced","spacious"];
  const width=widths.includes(settings.examCardWidth)?settings.examCardWidth:"balanced";
  settings.examCardWidth=width;
@@ -359,7 +344,8 @@ function applySettings(){
  const soundToggle=document.getElementById("soundOnBtn"),soundMute=document.getElementById("soundOffBtn");
  if(soundToggle)soundToggle.classList.toggle("active",soundOn);
  if(soundMute)soundMute.classList.toggle("active",!soundOn);
- let fstr = "'Inter', 'Segoe UI', Arial, sans-serif";
+ let fstr = "'DM Sans', 'Segoe UI', Arial, sans-serif";
+ if(settings.fontFamily==="System Default") fstr = "'DM Sans', 'Segoe UI', Arial, sans-serif";
  if(settings.fontFamily==="Serif Elegant") fstr = "'Latin Modern Roman', 'Computer Modern', 'STIX Two Text', 'Times New Roman', serif";
  if(settings.fontFamily==="Modern Rounded") fstr = "'Nunito', 'Quicksand', 'Arial Rounded MT Bold', sans-serif";
  if(settings.fontFamily==="Monospace") fstr = "'Cascadia Code', 'SFMono-Regular', Consolas, monospace";
@@ -368,21 +354,32 @@ function applySettings(){
  if(settings.fontFamily==="Lora") fstr = "'Lora', Georgia, serif";
  if(settings.fontFamily==="DM Sans") fstr = "'DM Sans', 'Segoe UI', sans-serif";
  if(settings.fontFamily==="Nunito Sans") fstr = "'Nunito Sans', 'Segoe UI', sans-serif";
+ if(settings.fontFamily==="Inter") fstr = "'Inter', 'Segoe UI', sans-serif";
+ if(settings.fontFamily==="Roboto") fstr = "'Roboto', 'Segoe UI', sans-serif";
+ if(settings.fontFamily==="Open Sans") fstr = "'Open Sans', 'Segoe UI', sans-serif";
+ if(settings.fontFamily==="Manrope") fstr = "'Manrope', 'Segoe UI', sans-serif";
+ if(settings.fontFamily==="Merriweather") fstr = "'Merriweather', Georgia, serif";
  if(settings.fontFamily==="IBM Plex Mono") fstr = "'IBM Plex Mono', Consolas, monospace";
+ if(settings.fontFamily==="JetBrains Mono") fstr = "'JetBrains Mono', Consolas, monospace";
+ if(settings.fontFamily==="Fira Code") fstr = "'Fira Code', Consolas, monospace";
  document.body.style.setProperty('--exam-font', fstr);
- mode=settings.defaultMode;updateModeUI()
+ updateModeUI()
 }
 function setTheme(x){settings.theme=x;put(K.settings,settings);applySettings()}
+function setColorScheme(value){if(!["classic","ocean","forest","sunset","slate"].includes(value))return;settings.colorScheme=value;put(K.settings,settings);applySettings()}
 function setSoundEnabled(enabled){settings.soundEnabled=!!enabled;put(K.settings,settings);applySettings();toast(enabled?"Interface sounds on":"Interface sounds muted")}
-function setDefaultMode(x){settings.defaultMode=x;put(K.settings,settings);setMode(x)}
-function updateTheme(){document.getElementById("lightBtn").classList.toggle("active",settings.theme==="light");document.getElementById("darkBtn").classList.toggle("active",settings.theme==="dark")}
+function setDefaultMode(x){settings.defaultMode=x==="practice"?"practice":"exam";put(K.settings,settings);updateModeUI()}
+function updateTheme(){
+ const light=document.getElementById("lightBtn"),dark=document.getElementById("darkBtn");
+ if(light)light.classList.toggle("active",settings.theme==="light");
+ if(dark)dark.classList.toggle("active",settings.theme==="dark");
+}
 function updateTimerUI(){
  const examEl=document.getElementById("timer");
  const active=mode==="practice"?timerState.practiceSeconds:timerState.examSeconds;
  if(examEl)examEl.textContent=formatGlobalTime(timerState.examSeconds);
  const examCtl=document.getElementById("examTimerControl");
  if(examCtl)examCtl.style.display=mode==="exam"?"flex":"none";
- updateUniversalTimerUI();
 }
 function formatGlobalTime(sec){
  sec=Math.max(0,Math.floor(Number(sec)||0));
@@ -396,30 +393,15 @@ function pauseGlobalTimer(){
  timerState.running=false;
  updateTimerUI();
 }
-function togglePracticeTimer(){
- if(mode!=="practice")return;
- if(timerState.practiceSeconds<=0)timerState.practiceSeconds=5*60;
- timerState.running=!timerState.running;
- updateTimerUI();
- saveSessionSoon();
-}
-function setPracticeTimer(minutes){
- minutes=Number(minutes);
- if(minutes!==5&&minutes!==10)return;
- timerState.practiceSeconds=minutes*60;
- timerState.running=true;
- mode="practice";
- updateModeUI();
- updateTimerUI();
- saveSessionSoon();
- toast("Practice timer: "+minutes+" minutes");
-}
 function updateModeUI(){
  document.body.classList.toggle("practice-active",mode==="practice");
  document.getElementById("examMode").classList.toggle("active",mode==="exam");
  document.getElementById("practiceMode").classList.toggle("active",mode==="practice");
- document.getElementById("defaultExam").classList.toggle("active",settings.defaultMode==="exam");
- document.getElementById("defaultPractice").classList.toggle("active",settings.defaultMode==="practice");
+ document.getElementById("examMode").setAttribute("aria-pressed",String(mode==="exam"));
+ document.getElementById("practiceMode").setAttribute("aria-pressed",String(mode==="practice"));
+ const defaultExam=document.getElementById("defaultExam"),defaultPractice=document.getElementById("defaultPractice");
+ if(defaultExam)defaultExam.classList.toggle("active",settings.defaultMode==="exam");
+ if(defaultPractice)defaultPractice.classList.toggle("active",settings.defaultMode==="practice");
  if(document.getElementById("modeBadge"))document.getElementById("modeBadge").textContent=mode==="exam"?"EXAM MODE":"PRACTICE MODE";
  updateTimerUI();
 }
@@ -446,7 +428,8 @@ function normalizeImageSource(value){
 function normalize(q,defaults={}){
  const text=q.question??q.text??"";
  const type=String(q.type??q.questionType??"mcq").toLowerCase().replace(/[\s-]+/g,"_");
- const explanation=q.explanation??q.reason??q.solution??q.rationale??q.hint??"";
+ const explanation=q.explanation??q.reason??q.solution??q.rationale??"";
+ const hint=q.hint??"";
  const marks=Number(q.marks??q.points??defaults.marks??settings.defaultMarks??1);
  const negativeMarks=Number(q.negativeMarks??q.negative??defaults.negativeMarks??settings.defaultNegative??0);
  const section=q.section??q.category??q.topic??defaults.name??"General";
@@ -461,7 +444,7 @@ function normalize(q,defaults={}){
    const accepted=q.acceptedAnswers??q.accepted??q.answers??q.answer;
    const vals=Array.isArray(accepted)?accepted.map(String):[String(accepted??"")];
    if(!vals[0])throw Error("Fill-in-the-blank needs answer/acceptedAnswers.");
-   return {type:"fill_blank",text,options:[],answer:vals[0],acceptedAnswers:vals,explanation,marks,negativeMarks,section,image};
+   return {type:"fill_blank",text,options:[],answer:vals[0],acceptedAnswers:vals,explanation,hint,marks,negativeMarks,section,image};
  }
 
  if(type==="match"||type==="matching"||type==="drag_drop"||type==="drag_and_drop"){
@@ -473,7 +456,7 @@ function normalize(q,defaults={}){
      throw Error(`Invalid matching pair ${i+1}.`);
    });
    if(normalizedPairs.some(p=>!p.left||!p.right))throw Error("Every matching pair needs left and right values.");
-   return {type:type.includes("drag")?"drag_drop":"match",text,options:[],answer:normalizedPairs.map(p=>p.right),pairs:normalizedPairs,explanation,marks,negativeMarks,section,image};
+   return {type:type.includes("drag")?"drag_drop":"match",text,options:[],answer:normalizedPairs.map(p=>p.right),pairs:normalizedPairs,explanation,hint,marks,negativeMarks,section,image};
  }
 
  if(type==="ordering"){
@@ -482,7 +465,7 @@ function normalize(q,defaults={}){
    if(!Array.isArray(items)||items.length<2)throw Error("Ordering questions need an items array.");
    const order=Array.isArray(raw)?raw.map(String):[];
    if(order.length!==items.length)throw Error("Ordering answer must contain every item in order.");
-   return {type:"ordering",text,options:items.map(String),answer:order,explanation,marks,negativeMarks,section,image};
+   return {type:"ordering",text,options:items.map(String),answer:order,explanation,hint,marks,negativeMarks,section,image};
  }
 
  const options=q.options??q.choices;
@@ -490,7 +473,7 @@ function normalize(q,defaults={}){
    const opts=["True","False"];
    const raw=q.answer??q.correct;
    const answer=String(raw).toLowerCase().startsWith("t")?"A":"B";
-   return {type:"true_false",text,options:opts,answer,explanation,marks,negativeMarks,section,image};
+   return {type:"true_false",text,options:opts,answer,explanation,hint,marks,negativeMarks,section,image};
  }
  if(!Array.isArray(options)||options.length<2)throw Error("Each choice question needs at least 2 options/choices.");
  const raw=q.answer??q.correct;
@@ -502,7 +485,7 @@ function normalize(q,defaults={}){
    if(!answer){let i=options.findIndex(x=>String(x).trim()===s);if(i>=0)answer=String.fromCharCode(65+i)}
  }
  if(!answer)throw Error("Could not resolve answer for: "+text.slice(0,55));
- return {type:type==="image_choice"?"image_choice":type==="image"?"image":"mcq",text,options:options.map(String),answer,explanation,marks,negativeMarks,section,image};
+ return {type:type==="image_choice"?"image_choice":type==="image"?"image":"mcq",text,options:options.map(String),answer,explanation,hint,marks,negativeMarks,section,image};
 }
 
 function parseQuizInput(raw){
@@ -629,6 +612,60 @@ function formatExplanationText(text){
   if(text==null)return "";
   return String(text).trim();
 }
+function renderQuizInlineMarkdown(text){
+ const tokens=[];
+ const hold=html=>`\uE000${tokens.push(html)-1}\uE001`;
+ const protectedText=String(text).replace(/(`[^`\n]+`|\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+\$)/g,match=>{
+   if(match[0]==="`")return hold(`<code class="quiz-inline-code">${esc(match.slice(1,-1))}</code>`);
+   return hold(esc(match));
+ });
+ let html=esc(protectedText)
+   .replace(/\*\*([^*\n]+)\*\*/g,"<strong>$1</strong>")
+   .replace(/(^|[^\w])__([^_\n]+)__(?!\w)/g,"$1<strong>$2</strong>")
+   .replace(/~~([^~\n]+)~~/g,"<del>$1</del>")
+   .replace(/\*([^*\n]+)\*/g,"<em>$1</em>")
+   .replace(/(^|[^\w])_([^_\n]+)_(?!\w)/g,"$1<em>$2</em>");
+ return html.replace(/\uE000(\d+)\uE001/g,(_,index)=>tokens[Number(index)]);
+}
+function quizMarkdownHtml(text){
+ const lines=String(text??"").replace(/\r\n?/g,"\n").replace(/\\n/g,"\n").split("\n"),blocks=[];
+ let paragraph=[],i=0;
+ const flush=()=>{if(paragraph.length){blocks.push(`<p>${paragraph.map(renderQuizInlineMarkdown).join("<br>")}</p>`);paragraph=[]}};
+ while(i<lines.length){
+   const line=lines[i],trimmed=line.trim();
+   if(!trimmed){flush();i++;continue}
+   if(/^```/.test(trimmed)){
+     flush();const code=[];i++;
+     while(i<lines.length&&!/^```/.test(lines[i].trim()))code.push(lines[i++]);
+     if(i<lines.length)i++;
+     blocks.push(`<pre class="quiz-code-block"><code>${esc(code.join("\n"))}</code></pre>`);continue;
+   }
+   const heading=trimmed.match(/^(#{1,3})\s+(.+)$/);
+   if(heading){flush();blocks.push(`<h${heading[1].length+2}>${renderQuizInlineMarkdown(heading[2])}</h${heading[1].length+2}>`);i++;continue}
+   const item=trimmed.match(/^([-*+]|\d+[.)])\s+(.+)$/);
+   if(item){
+     flush();const ordered=/^\d/.test(item[1]),items=[];
+     while(i<lines.length){
+       const match=lines[i].trim().match(/^([-*+]|\d+[.)])\s+(.+)$/);
+       if(!match||/^\d/.test(match[1])!==ordered)break;
+       items.push(`<li>${renderQuizInlineMarkdown(match[2])}</li>`);i++;
+     }
+     blocks.push(`<${ordered?"ol":"ul"}>${items.join("")}</${ordered?"ol":"ul"}>`);continue;
+   }
+   paragraph.push(line);i++;
+ }
+ flush();return blocks.join("");
+}
+function setQuizRichText(element,text){
+ if(!element)return;
+ element.classList.add("quiz-rich-text");
+ element.innerHTML=quizMarkdownHtml(text);
+}
+function setQuizExplanation(element,text){
+ if(!element)return;
+ element.innerHTML=`<strong>💡 Explanation</strong><div class="explanation-content quiz-rich-text">${quizMarkdownHtml(formatExplanationText(text))}</div>`;
+ renderAllQuizMath(element);
+}
 function renderAllQuizMath(root=document){
   if(!root||typeof renderMathInElement!=="function")return;
   protectQuizCodeAndMath(root);
@@ -705,7 +742,7 @@ function renderSpecialQuestion(q,opts){
    q.pairs.forEach((pair,i)=>{
      const row=document.createElement("div");row.className="match-row";
      const left=document.createElement("div");left.className="match-left";
-     left.innerHTML=esc(pair.left);
+     setQuizRichText(left,pair.left);
 
      const wrap=document.createElement("div");wrap.className="match-choice";
      const selected=chosen[i]||"";
@@ -763,8 +800,11 @@ function renderSpecialQuestion(q,opts){
  }else{
    q.options.forEach((text,i)=>{
      const letter=String.fromCharCode(65+i),b=document.createElement("button");
-     b.className="option"+(answers[current]===letter?" selected":"");
-     b.innerHTML=`<span class="letter">${letter}</span><span class="option-text">${esc(text)}</span>`;
+     b.type="button";b.className="option"+(answers[current]===letter?" selected":"");
+     const marker=document.createElement("span");marker.className="letter";marker.textContent=letter;
+     const optionText=document.createElement("span");optionText.className="option-text quiz-rich-text";
+     optionText.innerHTML=String(text).split(/\r?\n/).map(renderQuizInlineMarkdown).join("<br>");
+     b.append(marker,optionText);
      b.onclick=()=>choose(letter);opts.appendChild(b);
    });
  }
@@ -792,6 +832,11 @@ function answerIsPresent(ans,q){
  if(q.type==="match"||q.type==="drag_drop")return Array.isArray(ans)&&ans.length===q.pairs.length&&ans.every(x=>String(x??"").trim()!=="");
  if(q.type==="ordering")return Array.isArray(ans)&&ans.length===q.answer.length&&ans.every(x=>String(x).trim()!=="");
  return !!ans;
+}
+function getSessionAnsweredCount(session){
+ const questions=Array.isArray(session.questions)?session.questions:[];
+ const answers=Array.isArray(session.answers)?session.answers:[];
+ return questions.reduce((count,question,index)=>count+(answerIsPresent(answers[index],question)?1:0),0);
 }
 
 /* Fast keyboard workflow */
@@ -842,11 +887,14 @@ function examflowKeyboardHandler(e){
   const key=e.key, lower=key.toLowerCase(), typing=isTypingTarget(e.target);
 
   if(e.key==="Escape"){
-    closeImporter();closeSubmit();closeSessions();
+    if(typeof closeImporter==="function")closeImporter();
+    if(typeof closeSubmit==="function")closeSubmit();
+    if(typeof closeSessions==="function")closeSessions();
     if(typeof closeCBQModal === "function") closeCBQModal();
     const drawer=document.getElementById("examProgressDrawer");
-    if(drawer?.classList.contains("open"))toggleQuestionProgress();
-    if(document.activeElement) document.activeElement.blur();
+    const paletteWasOpen=drawer?.classList.contains("open");
+    if(paletteWasOpen)toggleQuestionProgress();
+    else if(document.activeElement) document.activeElement.blur();
     return;
   }
 
@@ -871,9 +919,9 @@ function examflowKeyboardHandler(e){
   if(typing)return;
 
   // Alt+number navigation stays separate from quiz answer keys and browser tabs.
-  if(e.altKey && !e.shiftKey && /^[1-5]$/.test(e.key)){
+  if(e.altKey && !e.shiftKey && /^[1-3]$/.test(e.key)){
     e.preventDefault();
-    const page=["home","exam","dashboard","planner","settings"][Number(e.key)-1];
+    const page=["home","exam","settings"][Number(e.key)-1];
     if(page)showView(page);
     return;
   }
@@ -885,22 +933,8 @@ function examflowKeyboardHandler(e){
     return;
   }
 
-  if(lower==="t"){e.preventDefault();toggleUniversalTimer();return}
   if(e.shiftKey && !e.altKey && lower==="l"){e.preventDefault();setTheme("light");return}
   if(e.shiftKey && !e.altKey && lower==="d"){e.preventDefault();setTheme("dark");return}
-
-  const resultsActive=document.getElementById("testResultsView")?.classList.contains("active");
-  if(resultsActive){
-    if(e.key==="ArrowRight"||e.key==="ArrowLeft"){
-      e.preventDefault();
-      moveResultQuestion(e.key==="ArrowRight"?1:-1);
-      return;
-    }
-    if(lower==="r"){e.preventDefault();retakeLastTest();return}
-    if(lower==="s"){e.preventDefault();saveResultCopy();return}
-    if(lower==="c"){e.preventDefault();showView("home");return}
-    return;
-  }
 
   const examActive=document.getElementById("examView")?.classList.contains("active");
 
@@ -914,7 +948,6 @@ function examflowKeyboardHandler(e){
   if(e.shiftKey && lower==="e"){e.preventDefault();setMode("exam");return}
   if(e.shiftKey && lower==="g"){e.preventDefault();redirectQuestionToChatGPT();return}
   if(e.shiftKey && lower==="q"){e.preventDefault();toggleQuestionProgress();return}
-  if(e.shiftKey && lower==="t"){e.preventDefault();toggleUniversalTimer();return}
   if(e.shiftKey && lower==="s"){e.preventDefault();submitExam();return}
 
   if(lower==="e"){e.preventDefault();setMode("exam");return}
@@ -935,6 +968,7 @@ function examflowKeyboardHandler(e){
   if(lower==="v" && mode==="practice"){e.preventDefault();viewPracticeAnswer();return}
   if(lower==="p"){e.preventDefault();toggleQuestionProgress();return}
   if(lower==="r"){e.preventDefault();toggleReview();return}
+  if(lower==="c"){e.preventDefault();copyCurrentQuestion();return}
   if(e.key==="Delete" || e.key==="Backspace"){e.preventDefault();clearAnswer();return}
   if(/^[1-4]$/.test(e.key)){e.preventDefault();examflowSelectOptionByNumber(Number(e.key));return}
 }
@@ -954,11 +988,11 @@ document.addEventListener("pointerdown",e=>{
   setTimeout(()=>b.classList.remove("click-pulse"),180);
 });
 
-function copyBeginnerSchema(){
+function copyBeginnerSchema(override){
   const source=document.getElementById("beginnerSchema");
   if(!source)return;
   const schema=source.value||source.textContent||"";
-  const text=`Create a Concept Breakdown Quiz (CBQ) about: [TOPIC]
+  const fallbackText=`Create a Concept Breakdown Quiz (CBQ) about: [TOPIC]
 
 What a CBQ means:
 A CBQ breaks one difficult topic into a sequence of small, connected questions. Each question should build the reasoning needed for the next step, moving from core ideas to application and finally to a clear solution. Do not make a list of unrelated recall questions.
@@ -967,6 +1001,7 @@ Your task:
 - Replace [TOPIC] with the topic or source material I provide.
 - Create a coherent quiz that tests understanding and step-by-step reasoning.
 - Include useful explanations for every question.
+- Add an optional short hint to guide the learner without revealing the answer.
 - Use the question types that best fit the topic: mcq, true_false, fill_blank, match, drag_drop, ordering, or image_choice.
 - Give every question a correct answer and marks. Use negativeMarks only when appropriate.
 - Keep all question and answer text inside the JSON values.
@@ -988,7 +1023,9 @@ Output rules:
 
 ExamFlow CBQ schema:
 ${schema}`;
-  const done=()=>toast("AI CBQ prompt and schema copied ✓");
+  const promptText=typeof getPromptText==="function"?getPromptText("cbq"):"";
+  const text=typeof override==="string"?override:promptText||fallbackText;
+  const done=()=>toast(typeof override==="string"?"Prompt copied ✓":promptText?"CBQ prompt copied ✓":"AI CBQ prompt and schema copied ✓");
   if(navigator.clipboard?.writeText){
     navigator.clipboard.writeText(text).then(done).catch(()=>{
       const ta=document.createElement("textarea");
@@ -1008,15 +1045,29 @@ function render(){
  updateModeUI();
  if(!questions.length){
    document.getElementById("currentLabel").textContent="0";document.getElementById("totalLabel").textContent="0";
-   document.getElementById("questionText").textContent="Paste a quiz JSON to start.";
+   setQuizRichText(document.getElementById("questionText"),"Paste a quiz JSON to start.");
+   const hintCard=document.getElementById("hintCard");if(hintCard)hintCard.hidden=true;
    document.getElementById("options").innerHTML="";document.getElementById("qgrid").innerHTML="";
-   document.getElementById("progressText").textContent="0 / 0";document.getElementById("progressBar").style.width="0%";return;
+   document.getElementById("examProgressGrid").innerHTML="";
+   document.getElementById("feedback").textContent="";document.getElementById("explanation").style.display="none";
+   document.getElementById("progressText").textContent="0 / 0";document.getElementById("progressBar").style.width="0%";
+   ["copyQuestionBtn","deleteQuestionBtn","clearAnswerBtn","viewAnswerBtn","prevBtn","nextBtn","bookmark"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true});
+   return;
  }
- const q=questions[current],count=answers.filter(Boolean).length;
+ const q=questions[current],count=answers.reduce((total,answer,index)=>total+(answerIsPresent(answer,questions[index])?1:0),0);
  const apExisting=document.getElementById("practiceAnswerPanel");
  if(apExisting && apExisting.dataset.question!==String(current))apExisting.remove();
  document.getElementById("currentLabel").textContent=current+1;document.getElementById("totalLabel").textContent=questions.length;
- document.getElementById("questionText").innerHTML=esc(q.text||"");
+ setQuizRichText(document.getElementById("questionText"),q.text||"");
+ const hintCard=document.getElementById("hintCard"),hintText=document.getElementById("hintText"),hintToggle=document.getElementById("hintToggle");
+ const hasHint=String(q.hint||"").trim()!=="";
+ if(hintCard&&hintText&&hintToggle){
+   hintCard.hidden=!hasHint;
+   hintText.hidden=true;
+   hintToggle.setAttribute("aria-expanded","false");
+   hintToggle.textContent="💡 Show hint";
+   if(hasHint)setQuizRichText(hintText,q.hint);
+ }
  renderQuestionImage(q);
  const opts=document.getElementById("options");opts.innerHTML="";
  renderSpecialQuestion(q,opts);
@@ -1027,35 +1078,163 @@ function render(){
  const ex=document.getElementById("explanation");
  const ap=document.getElementById("practiceAnswerPanel");
  if(ap && !checkedQuestions.has(current))ap.style.display="none";
- if(mode==="practice"&&answers[current]&&checkedQuestions.has(current)){
-   const correct=isQuestionCorrect(q,answers[current]);
-   fb.textContent=correct?"✓ Correct":"✕ Incorrect — review the concept";
-   fb.style.color=correct?"var(--good)":"var(--bad)";
-   if(q.explanation){
-     ex.style.display="block";
-     ex.innerHTML="<strong>💡 Explanation</strong><div class='explanation-content' style='white-space:pre-wrap;'>"+esc(formatExplanationText(q.explanation))+"</div>";
-     renderAllQuizMath(ex);
-   }else ex.style.display="none";
+ fb.removeAttribute("data-result");
+ if(mode==="practice"&&checkedQuestions.has(current)){
+   const hasAnswer=answerIsPresent(answers[current],q),correct=hasAnswer&&isQuestionCorrect(q,answers[current]);
+   fb.textContent=hasAnswer?(correct?"✓ Correct":"✕ Incorrect — check the answer below"):"";
+   if(hasAnswer)fb.dataset.result=correct?"correct":"wrong";
+   else fb.removeAttribute("data-result");
+   showPracticeAnswerPanel(q);
+   highlightCorrectAnswerForView(q);
+   if(q.explanation){ex.style.display="block";setQuizExplanation(ex,q.explanation)}else ex.style.display="none";
  }else{fb.textContent="";ex.style.display="none";}
- document.getElementById("bookmark").textContent=reviews.has(current)?"★ Review":"☆ Review";document.getElementById("bookmark").classList.toggle("saved",reviews.has(current));
+ const bookmark=document.getElementById("bookmark");
+ bookmark.textContent=reviews.has(current)?"★ Marked":"☆ Review";bookmark.classList.toggle("saved",reviews.has(current));
  document.getElementById("prevBtn").disabled=current===0;document.getElementById("nextBtn").textContent=current===questions.length-1?"Finish":"Next →";
  document.getElementById("answeredCount").textContent=count;document.getElementById("reviewCount").textContent=reviews.size;
  document.getElementById("progressText").textContent=`${count} / ${questions.length}`;document.getElementById("progressBar").style.width=(count/questions.length*100)+"%";
- const grid=document.getElementById("qgrid");grid.innerHTML="";
- questions.forEach((_,i)=>{let b=document.createElement("button");b.className="qbtn"+(i===current?" current":"")+(answerIsPresent(answers[i],questions[i])?" answered":"")+(reviews.has(i)?" review":"");b.textContent=i+1;b.onclick=()=>{current=i;render();saveSessionSoon()};grid.appendChild(b)});
+ renderQuestionNavigation(document.getElementById("qgrid"),"qbtn",jumpToQuestion);
  document.getElementById("options").querySelectorAll("button,input,select").forEach(el=>el.disabled=examFinished);
- ["prevBtn","viewAnswerBtn","nextBtn","bookmark"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=examFinished});
+ ["prevBtn","viewAnswerBtn","nextBtn","bookmark","copyQuestionBtn","clearAnswerBtn","deleteQuestionBtn"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=examFinished});
+ const questionOptions=document.querySelector("#examView .question-options");
+ if(questionOptions){questionOptions.inert=examFinished;questionOptions.querySelector("summary").setAttribute("aria-disabled",String(examFinished))}
  document.getElementById("questionText").classList.toggle("exam-finished",examFinished);
+ if(document.getElementById("examProgressDrawer")?.classList.contains("open"))renderQuestionProgress();
+}
+function renderQuestionNavigation(container,buttonClass,onSelect){
+ if(!container)return;
+ container.innerHTML="";
+ getQuestionSectionGroups().forEach(group=>{
+   const section=document.createElement("section");section.className="question-palette-section";
+   const heading=document.createElement("div");heading.className="question-palette-section-heading";
+   const title=document.createElement("strong");title.textContent=group.name;
+   const sectionCount=document.createElement("small");sectionCount.textContent=`${group.indices.length} question${group.indices.length===1?"":"s"}`;
+   heading.append(title,sectionCount);
+   const grid=document.createElement("div");grid.className="question-palette-section-grid";
+   group.indices.forEach(index=>{
+     const isAnswered=answerIsPresent(answers[index],questions[index]),isCurrent=index===current,isReview=reviews.has(index);
+     const button=document.createElement("button");
+     button.className=buttonClass+(isCurrent?" current":"")+(isAnswered?" answered":"")+(isReview?" review":"");
+     button.textContent=String(index+1);
+     button.setAttribute("aria-label",`Question ${index+1}, ${group.name}, ${isCurrent?"current, ":""}${isAnswered?"answered":"unanswered"}${isReview?", marked for review":""}`);
+     button.title=`Question ${index+1} · ${group.name}`;
+     button.addEventListener("click",()=>onSelect(index));
+     grid.appendChild(button);
+   });
+   section.append(heading,grid);container.appendChild(section);
+ });
+}
+function getQuestionSectionGroups(){
+ const groups=new Map();
+ questions.forEach((question,index)=>{
+   const name=String(question.section||"General").trim()||"General";
+   if(!groups.has(name))groups.set(name,[]);
+   groups.get(name).push(index);
+ });
+ const order=(Array.isArray(sections)?sections:[])
+   .map(section=>String(section.name||"General").trim()||"General")
+   .filter((name,index,names)=>names.indexOf(name)===index);
+ return [...groups.entries()].map(([name,indices],index)=>({name,indices,index}))
+   .sort((a,b)=>{
+     const aOrder=order.indexOf(a.name),bOrder=order.indexOf(b.name);
+     if(aOrder<0&&bOrder<0)return a.index-b.index;
+     if(aOrder<0)return 1;
+     if(bOrder<0)return -1;
+     return aOrder-bOrder;
+   });
+}
+function currentQuestionCopyText(q){
+ const lines=[`Question: ${q.text||""}`];
+ if(q.type)lines.push(`Type: ${q.type}`);
+ if(q.type==="ordering"&&Array.isArray(q.options))lines.push(`Items:\n${q.options.map((item,index)=>`${index+1}. ${item}`).join("\n")}`);
+ else if(Array.isArray(q.options)&&q.options.length)lines.push(`Options:\n${q.options.map((option,index)=>`${String.fromCharCode(65+index)}. ${option}`).join("\n")}`);
+ if(Array.isArray(q.pairs)&&q.pairs.length)lines.push(`Pairs:\n${q.pairs.map(pair=>`${pair.left} → ${pair.right}`).join("\n")}`);
+ if(q.answer!==undefined){
+   let answer=q.answer;
+   if(q.type==="mcq"||q.type==="true_false"||q.type==="image"||q.type==="image_choice"){
+     const index=typeof q.answer==="number"?q.answer:(/^[A-Z]$/i.test(String(q.answer))?String(q.answer).toUpperCase().charCodeAt(0)-65:-1);
+     if(index>=0&&q.options[index]!==undefined)answer=`${String.fromCharCode(65+index)}. ${q.options[index]}`;
+   }
+   lines.push(`Answer: ${Array.isArray(answer)?answer.join(" → "):answer}`);
+ }
+ if(Array.isArray(q.acceptedAnswers)&&q.acceptedAnswers.length)lines.push(`Accepted answers:\n${q.acceptedAnswers.join("\n")}`);
+ if(q.hint)lines.push(`Hint:\n${q.hint}`);
+ if(q.explanation)lines.push(`Explanation:\n${q.explanation}`);
+ if(q.image)lines.push(`Image: ${q.image}`);
+ return lines.join("\n\n");
+}
+function copyCurrentQuestion(){
+ const q=questions[current];
+ if(!q){toast("No question loaded");return}
+ const text=currentQuestionCopyText(q),done=()=>toast("Question copied ✓");
+ const fallback=()=>{
+   const input=document.createElement("textarea");
+   input.value=text;input.setAttribute("readonly","");input.style.position="fixed";input.style.opacity="0";
+   document.body.appendChild(input);input.select();
+   const copied=document.execCommand("copy");
+   input.remove();
+   if(copied)done();else toast("Copy failed");
+ };
+ if(navigator.clipboard?.writeText)navigator.clipboard.writeText(text).then(done).catch(fallback);
+ else fallback();
+}
+function showPracticeAnswerPanel(q){
+ let panel=document.getElementById("practiceAnswerPanel");
+ if(!panel){
+   panel=document.createElement("div");panel.id="practiceAnswerPanel";panel.className="practice-answer-panel";
+   document.getElementById("explanation").before(panel);
+ }
+ panel.dataset.question=String(current);
+ panel.innerHTML=`<div class="answer-label">Correct answer</div><div class="answer-value quiz-rich-text">${practiceCorrectAnswerHTML(q)}</div>`;
+ panel.style.display="block";renderAllQuizMath(panel);
+}
+function deleteCurrentQuestion(){
+ if(!questions.length||examFinished)return;
+ const index=current;
+ document.querySelector("#examView .question-options")?.removeAttribute("open");
+ if(!confirm(questions.length===1?"Delete the last question and remove this saved session?":"Delete this question? Other answers will be kept."))return;
+ clearTimeout(saveTimer);
+ const remap=set=>new Set([...set].filter(value=>value!==index).map(value=>value>index?value-1:value));
+ const previousExamId=examId;
+ questions.splice(index,1);answers.splice(index,1);
+ reviews=remap(reviews);checkedQuestions=remap(checkedQuestions);
+ matchOrders=Object.fromEntries(Object.entries(matchOrders).filter(([key])=>Number(key)!==index).map(([key,value])=>[Number(key)>index?Number(key)-1:Number(key),value]));
+ sections=sections.filter(section=>questions.some(question=>question.section===String(section.name||"General")));
+ current=Math.max(0,Math.min(index,questions.length-1));
+ document.getElementById("practiceAnswerPanel")?.remove();
+ if(!questions.length){
+   put(K.sessions,get(K.sessions,[]).filter(session=>session.id!==sessionId));
+   if(!get(K.sessions,[]).some(session=>session.examId===previousExamId)){
+     put(K.exams,get(K.exams,[]).filter(exam=>exam.id!==previousExamId));
+     put(K.recent,get(K.recent,[]).filter(exam=>exam.id!==previousExamId));
+   }
+   sessionId=null;examId=null;examName="No quiz loaded";
+   answers=[];reviews=new Set();checkedQuestions=new Set();matchOrders={};sections=[];
+   timerState.running=false;seconds=(settings.defaultDuration||5)*60;timerState.examSeconds=seconds;
+   document.getElementById("examProgressGrid").innerHTML="";updateTimerUI();
+ }else{
+   registerActiveExam();saveSession();
+ }
+ syncExamTitleBar();render();renderSessions();renderHome();
+ toast(questions.length?"Question deleted · progress saved":"Last question deleted");
+}
+function toggleHint(){
+ const hintText=document.getElementById("hintText"),hintToggle=document.getElementById("hintToggle");
+ if(!hintText||!hintToggle)return;
+ const open=hintText.hidden;
+ hintText.hidden=!open;hintToggle.setAttribute("aria-expanded",String(open));
+ hintToggle.textContent=open?"💡 Hide hint":"💡 Show hint";
+ if(open)renderAllQuizMath(hintText);
 }
 function choose(letter){if(examFinished)return;answers[current]=letter;checkedQuestions.delete(current);render();renderQuestionProgress();saveSessionSoon()}
-function clearAnswer(){if(examFinished)return;answers[current]=null;checkedQuestions.delete(current);render();saveSessionSoon()}
+function clearAnswer(){if(examFinished)return;answers[current]=null;checkedQuestions.delete(current);render();renderQuestionProgress();saveSessionSoon()}
 function toggleReview(){if(examFinished)return;reviews.has(current)?reviews.delete(current):reviews.add(current);render();renderQuestionProgress();saveSessionSoon()}
 function nextQuestion(){if(current<questions.length-1){current++;render();if(!examFinished)saveSessionSoon()}else if(!examFinished)submitExam()}
 function previousQuestion(){if(current>0){current--;render();if(!examFinished)saveSessionSoon()}}
 function submitExam(){
  if(examFinished)return;
  if(!questions.length){toast("Load a quiz first");return}
- const unanswered=answers.filter(x=>!x).length;
+ const unanswered=questions.reduce((count,question,index)=>count+(answerIsPresent(answers[index],question)?0:1),0);
  document.getElementById("submitText").textContent=unanswered?`You have ${unanswered} unanswered question${unanswered>1?"s":""}. Submit anyway?`:"All questions are answered. Submit and save your result?";
  document.getElementById("submitModal").classList.add("show")
 }
@@ -1063,7 +1242,7 @@ function closeSubmit(){document.getElementById("submitModal").classList.remove("
 function finishTest(automatic=false){
  if(examFinished)return;
  examFinished=true;timerState.running=false;closeSubmit();render();
- const r=saveResult();saveSession();openDetailedResults(r);toast(automatic?"Time is up. Exam submitted.":`Result saved · ${r.percent}% ✓`)
+ const r=saveResult();saveSession();showView("home");toast(automatic?"Time is up. Exam submitted.":`Result saved · ${r.percent}% ✓`)
 }
 
 function saveSession(){
@@ -1076,7 +1255,7 @@ function saveSession(){
 let saveTimer;function saveSessionSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(saveSession,120)}
 function renderSessions(){
  const el=document.getElementById("sessionList"),ss=get(K.sessions,[]);
- el.innerHTML=ss.length?ss.slice(0,20).map(s=>`<div class="session-item"><button class="session-load" onclick="restoreSession('${s.id}')" title="${esc(s.name)}">${esc(s.name)} · ${s.answers.filter(Boolean).length}/${s.questions.length}</button><button class="session-delete" onclick="deleteSession('${s.id}')">×</button></div>`).join(""):'<div class="empty">No saved sessions.</div>';
+ el.innerHTML=ss.length?ss.slice(0,20).map(s=>`<div class="session-item"><button class="session-load" onclick="restoreSession('${s.id}')" title="${esc(s.name)}">${esc(s.name)} · ${getSessionAnsweredCount(s)}/${s.questions.length}</button><button class="session-delete" onclick="deleteSession('${s.id}')">×</button></div>`).join(""):'<div class="empty">No saved sessions.</div>';
 }
 function restoreSession(sid){
  const s=get(K.sessions,[]).find(x=>x.id===sid);if(!s)return;
@@ -1084,6 +1263,68 @@ function restoreSession(sid){
  if(document.getElementById("examTitle"))document.getElementById("examTitle").textContent=examName;document.getElementById("headerQuizName").textContent=examName;showView("exam");render();toast("Session restored ✓")
 }
 function deleteSession(sid){put(K.sessions,get(K.sessions,[]).filter(x=>x.id!==sid));renderSessions();renderDashboard();renderHome();}
+function savedQuizGroup(kind,sourceId){
+ const key={session:K.sessions,result:K.results,quiz:K.exams}[kind];
+ const source=key&&get(key,[]).find(item=>item.id===sourceId);
+ if(!source)return null;
+ const quizId=source.examId||source.id;
+ const matches=item=>item.examId===quizId||item.id===quizId;
+ const sessions=get(K.sessions,[]).filter(item=>matches(item)||kind==="session"&&item.id===sourceId);
+ const results=get(K.results,[]).filter(item=>matches(item)||kind==="result"&&item.id===sourceId);
+ return {source,quizId,sessionIds:new Set(sessions.map(item=>item.id)),resultIds:new Set(results.map(item=>item.id))};
+}
+function downloadSavedQuiz(kind,sourceId){
+ const group=savedQuizGroup(kind,sourceId);if(!group){toast("This saved quiz is no longer available.");return}
+ const exam=getExamRecord(group.quizId),source=group.source;
+ let questions=Array.isArray(source.questions)?source.questions:exam?.questions;
+ if(!Array.isArray(questions)&&kind==="result")questions=hydrateResult(source).questions;
+ if(!Array.isArray(questions)){toast("The saved quiz questions are unavailable.");return}
+ const quiz={
+  name:source.name||exam?.name||"Untitled quiz",
+  durationMinutes:Number(source.durationMinutes||exam?.durationMinutes||settings.defaultDuration)||5,
+  sections:cloneData(source.sections||exam?.sections||[]),
+  questions:cloneData(questions).map(({selected,...question})=>question)
+ };
+ const link=document.createElement("a"),url=URL.createObjectURL(new Blob([JSON.stringify(quiz,null,2)],{type:"application/json"}));
+ const filename=quiz.name.replace(/[<>:"/\\|?*\x00-\x1f]/g,"-").trim()||"quiz";
+ link.href=url;link.download=`${filename}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function renameSavedQuiz(kind,sourceId){
+ const group=savedQuizGroup(kind,sourceId);if(!group){toast("This saved quiz is no longer available.");return}
+ const entered=prompt("Edit saved quiz title",group.source.name||"Untitled quiz");if(entered===null)return;
+ const name=entered.trim();
+ if(!name){toast("Enter a quiz title.");return}
+ if(name.length>160){toast("Keep the title under 160 characters.");return}
+ if(name===group.source.name)return;
+ const {quizId,sessionIds,resultIds}=group;
+ put(K.sessions,get(K.sessions,[]).map(item=>sessionIds.has(item.id)?{...item,name}:item));
+ put(K.results,get(K.results,[]).map(item=>resultIds.has(item.id)?{...item,name}:item));
+ for(const key of [K.exams,K.recent])put(key,get(key,[]).map(item=>item.id===quizId?{...item,name}:item));
+ if(examId===quizId||sessionIds.has(sessionId)){
+  examName=name;syncExamTitleBar();
+  const title=document.getElementById("examTitle");if(title)title.textContent=name;
+ }
+ renderSessions();renderDashboard();renderHome();toast("Quiz title updated");
+}
+function deleteSavedQuiz(kind,sourceId){
+ const group=savedQuizGroup(kind,sourceId);if(!group){toast("This saved quiz is no longer available.");return}
+ if(!confirm(`Delete "${group.source.name||"Untitled quiz"}"?\n\nThis removes its saved quiz, sessions, results and recent-history entry.`))return;
+ const {quizId,sessionIds,resultIds}=group;
+ if(examId===quizId||sessionIds.has(sessionId)){
+  clearTimeout(saveTimer);timerState.running=false;timerState.examSeconds=0;
+  questions=[];answers=[];reviews=new Set();checkedQuestions=new Set();matchOrders={};sections=[];current=0;sessionId=null;examId=null;examFinished=false;examName="No quiz loaded";
+  setQuestionSidebarState(false);syncQuestionSidebar(false);
+  document.getElementById("practiceAnswerPanel")?.remove();
+  const title=document.getElementById("examTitle");if(title)title.textContent=examName;
+  syncExamTitleBar();updateTimerUI();render();
+ }
+ put(K.sessions,get(K.sessions,[]).filter(item=>!sessionIds.has(item.id)));
+ put(K.results,get(K.results,[]).filter(item=>!resultIds.has(item.id)));
+ for(const key of [K.exams,K.recent])put(key,get(key,[]).filter(item=>item.id!==quizId));
+ renderSessions();renderDashboard();renderHome();
+ if(!questions.length)showView("home");
+ toast("Saved quiz deleted");
+}
 
 
 async function redirectQuestionToChatGPT(){
@@ -1093,11 +1334,12 @@ async function redirectQuestionToChatGPT(){
  if(Array.isArray(q.options)&&q.options.length)
    source+=`\nOptions: ${q.options.map((x,i)=>`${String.fromCharCode(65+i)}. ${x}`).join(" | ")}`;
  if(q.answer!==undefined)source+=`\nAnswer: ${typeof q.answer==="string"?q.answer:JSON.stringify(q.answer)}`;
+ if(q.hint)source+=`\nHint: ${q.hint}`;
  if(q.explanation)source+=`\nExplanation: ${q.explanation}`;
  if(Array.isArray(q.pairs)&&q.pairs.length)
    source+=`\nPairs: ${q.pairs.map(p=>`${p.left} → ${p.right}`).join(" | ")}`;
 
- const prompt=`Create a Concept Breakdown Quiz (CBQ) for the question below.
+ const fallbackPrompt=`Create a Concept Breakdown Quiz (CBQ) for the question below.
 
 WHAT IS A CBQ:
 A CBQ is a sequence of step-by-step questions that breaks the original problem into smaller conceptual reasoning steps. It should guide the learner from basic understanding toward the original question, rather than simply asking recall questions or giving the answer. Create exactly 5 progressively deeper CBQs that help the learner understand and solve the original question.
@@ -1153,6 +1395,8 @@ text, choices, correct, points, negative, duration, category, topic, reason, sol
 Generate the CBQ from this original question:
 
 ${source}`;
+ const payloadTemplate=typeof getPromptText==="function"?getPromptText("payload"):"";
+ const prompt=payloadTemplate?payloadTemplate.replace(/\{\{question\}\}/g,source):fallbackPrompt;
 
  const url="https://chatgpt.com/?q="+encodeURIComponent(prompt);
  const w=window.open(url,"_blank");
@@ -1351,7 +1595,7 @@ function retakeLastTest(){
  questions=qs.map(q=>({
    type:q.type,text:q.text,options:q.options||[],answer:q.answer,
    acceptedAnswers:q.acceptedAnswers||[],pairs:q.pairs||[],image:q.image||"",
-   explanation:q.explanation||"",marks:q.marks,negativeMarks:q.negativeMarks,section:q.section
+   hint:q.hint||"",explanation:q.explanation||"",marks:q.marks,negativeMarks:q.negativeMarks,section:q.section
  }));
  answers=Array(questions.length).fill(null);reviews=new Set();checkedQuestions=new Set();matchOrders={};current=0;
  seconds=Math.min(10,Math.max(1,lastResultSnapshot.durationMinutes||settings.defaultDuration||5))*60;
@@ -1392,14 +1636,15 @@ function planSortNewestFirst(a,b){
  return (String(b.date||"")+" "+String(b.time||"")).localeCompare(String(a.date||"")+" "+String(a.time||""));
 }
 function renderDashboard(){
+ if(!document.getElementById("mTests"))return;
  renderRecentQuizzes();
  const ss=get(K.sessions,[]).slice().sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
  const ssl = document.getElementById("homeSessionsList");
- if(ssl)ssl.innerHTML=renderStackedRows(ss,s=>`<div class="resultrow"><div class="resultmain"><strong>${esc(s.name)}</strong><small>${s.answers.filter(Boolean).length}/${s.questions.length} answered · ${s.mode==="practice"?"Practice":"Exam"}</small></div><div style="display:flex;gap:5px"><button class="btn" onclick="restoreSession(&apos;${s.id}&apos;)">Continue</button><button class="session-delete2" style="border:1px solid var(--line); border-radius:10px; width: 34px; background:transparent; cursor:pointer; color:var(--muted); font-size:16px; display:flex; align-items:center; justify-content:center;" onclick="deleteSession(&apos;${s.id}&apos;)">×</button></div></div>`,`No saved sessions. Add a CBQ to begin.`);
+ if(ssl)ssl.innerHTML=renderStackedRows(ss,s=>`<div class="resultrow"><div class="resultmain"><strong>${esc(s.name)}</strong><small>${getSessionAnsweredCount(s)}/${s.questions.length} answered · ${s.mode==="practice"?"Practice":"Exam"}</small></div><div style="display:flex;gap:5px"><button class="btn" onclick="restoreSession(&apos;${s.id}&apos;)">Continue</button><button class="session-delete2" style="border:1px solid var(--line); border-radius:10px; width: 34px; background:transparent; cursor:pointer; color:var(--muted); font-size:16px; display:flex; align-items:center; justify-content:center;" onclick="deleteSession(&apos;${s.id}&apos;)">×</button></div></div>`,`No saved sessions. Add a CBQ to begin.`);
  const rs=get(K.results,[]),avg=rs.length?Math.round(rs.reduce((a,r)=>a+r.percent,0)/rs.length):0,best=rs.length?Math.max(...rs.map(r=>r.percent)):0;
  const attempted=rs.reduce((a,r)=>a+(Number(r.correct)||0)+(Number(r.wrong)||0),0),solved=rs.reduce((a,r)=>a+(Number(r.correct)||0),0);
  document.getElementById("mTests").textContent=rs.length;document.getElementById("mAvg").textContent=avg+"%";document.getElementById("mBest").textContent=best+"%";document.getElementById("mQuestions").textContent=attempted;
- document.getElementById("mSolved").textContent=solved;document.getElementById("mPomodoro").textContent=pomodoroStats.sessions;document.getElementById("mStudyMinutes").textContent=pomodoroStats.minutes;
+ document.getElementById("mSolved").textContent=solved;
  document.getElementById("resultsList").innerHTML=rs.length?rs.slice(0,15).map(r=>`<div class="resultrow"><div class="resultmain"><strong>${esc(r.name)}</strong><small>${new Date(r.date).toLocaleString()} · ${r.mode==="practice"?"Practice":"Exam"} · ${r.correct}/${r.total} correct</small></div><div style="display:flex;align-items:center;gap:10px;"><b class="${r.percent>=80?"good":r.percent>=50?"mid":"bad"}">${r.percent}%</b><button class="session-delete" onclick="deleteResult('${r.id}')">×</button></div></div>`).join(""):'<div class="empty">No results yet.</div>';
  document.querySelectorAll("#resultsList .resultrow").forEach((row,i)=>{
    const result=rs[i];if(!result)return;
@@ -1416,6 +1661,7 @@ function deleteResult(id) {
   const rs = get(K.results, []);
   put(K.results, rs.filter(r => r.id !== id));
   renderDashboard();
+  renderHome();
   toast("Result deleted ✓");
 }
 function setGoalPreset(target){
@@ -1489,7 +1735,8 @@ function savePlan(){
  ["planName","planDate","planTime","planNotes","planJson"].forEach(x=>document.getElementById(x).value="");renderPlans();toast("Future test saved ✓")
 }
 function renderPlans(){
- const ps=get(K.plans,[]).slice().sort(planSortNewestFirst),el=document.getElementById("plansList");
+ const el=document.getElementById("plansList");if(!el)return;
+ const ps=get(K.plans,[]).slice().sort(planSortNewestFirst);
  const pc=document.getElementById("plannerCount");if(pc)pc.textContent=String(ps.length);
  el.innerHTML=renderStackedRows(ps,p=>`<div class="planrow"><div class="planmain"><strong>${esc(p.name)}</strong><small>${p.date}${p.time?" · "+p.time:""}${p.notes?" · "+esc(p.notes):""}</small></div><div style="display:flex;gap:5px"><button class="btn primary" onclick="startPlan('${p.id}')">▶ Start</button><button class="btn" onclick="deletePlan('${p.id}')">×</button></div></div>`,`No upcoming tests.`);
 }
@@ -1510,13 +1757,13 @@ async function importDataFile(event){
 
     // Accept only an ExamFlow backup structure. Quiz JSON belongs in
     // "Add CBQ Quiz" and is intentionally not mixed with application backup.
-    const allowed=["settings","results","goal","plans","sessions","exams","recent","pomodoroStats"];
+    const allowed=["settings","results","goal","plans","sessions","exams","recent","promptLibrary"];
     const hasBackup=allowed.some(k=>Object.prototype.hasOwnProperty.call(parsed,k));
     if(!hasBackup)throw new Error("This is a quiz JSON, not an ExamFlow data backup. Use Add CBQ Quiz.");
 
     const overwrite=confirm(
       "Import this ExamFlow backup?\\n\\n" +
-      "This will replace your current settings, results, goals, plans, saved sessions and quiz history with the backup."
+      "This will replace your current settings, results, goals, plans, saved sessions, quiz history and prompt slots with the backup."
     );
     if(!overwrite){
       event.target.value="";
@@ -1530,13 +1777,14 @@ async function importDataFile(event){
     if(parsed.sessions!==undefined)put(K.sessions,Array.isArray(parsed.sessions)?parsed.sessions:[]);
     if(parsed.exams!==undefined)put(K.exams,Array.isArray(parsed.exams)?parsed.exams:[]);
     if(parsed.recent!==undefined)put(K.recent,Array.isArray(parsed.recent)?parsed.recent:[]);
-    if(parsed.pomodoroStats!==undefined)put(K.pomodoroStats,parsed.pomodoroStats||{});
+    if(parsed.promptLibrary!==undefined)put(K.promptLibrary,parsed.promptLibrary||{});
     if(parsed.examDeadline!==undefined){
       if(parsed.examDeadline)localStorage.setItem("examflow_exam_deadline",String(parsed.examDeadline));
       else localStorage.removeItem("examflow_exam_deadline");
     }
 
-    settings=loadSettings();pomodoroStats=loadPomodoroStats();
+    settings=loadSettings();
+    if(parsed.promptLibrary!==undefined&&typeof initPromptLibrary==="function")await initPromptLibrary();
     renderSessions();renderDashboard();renderPlans();renderHome();renderTodos();applySettings();
     await savePersistentBackup();
     if(status){
@@ -1556,9 +1804,9 @@ async function importDataFile(event){
 }
 
 function exportData(){
- const data={settings,results:get(K.results,[]),goal:get(K.goal,{}),plans:get(K.plans,[]),sessions:get(K.sessions,[]),exams:get(K.exams,[]),recent:get(K.recent,[]),pomodoroStats},a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download="examflow-data.json";a.click()
+ const data={settings,results:get(K.results,[]),goal:get(K.goal,{}),plans:get(K.plans,[]),sessions:get(K.sessions,[]),exams:get(K.exams,[]),recent:get(K.recent,[]),promptLibrary:get(K.promptLibrary,null)},a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download="examflow-data.json";a.click()
 }
-function resetData(){if(confirm("Reset all local ExamFlow data?")){Object.values(K).forEach(x=>localStorage.removeItem(x));location.reload()}}
+function resetData(){if(confirm("Reset all local ExamFlow data?")){Object.values(K).forEach(x=>localStorage.removeItem(x));localStorage.removeItem("examflow_exam_deadline");location.reload()}}
 
 
 
@@ -1648,43 +1896,43 @@ if(!window.examflowDeadlineInterval)window.examflowDeadlineInterval=setInterval(
 const QUESTION_SIDEBAR_KEY="examflow_question_sidebar_open";
 
 function getQuestionSidebarState(){
-  return localStorage.getItem(QUESTION_SIDEBAR_KEY)==="true";
+  try{return localStorage.getItem(QUESTION_SIDEBAR_KEY)==="true"}
+  catch(error){console.warn("Could not read the question palette preference:",error);return false}
 }
 function setQuestionSidebarState(open){
-  localStorage.setItem(QUESTION_SIDEBAR_KEY, open ? "true" : "false");
+  try{localStorage.setItem(QUESTION_SIDEBAR_KEY,open?"true":"false")}
+  catch(error){console.warn("Could not save the question palette preference:",error)}
 }
-function applyQuestionSidebarState(){
+function syncQuestionSidebar(open){
   const d=document.getElementById("examProgressDrawer");
   const b=document.querySelector(".exam-progress-backdrop");
   if(!d)return;
-  const open=getQuestionSidebarState();
   d.classList.toggle("open",open);
+  d.setAttribute("aria-hidden",String(!open));d.inert=!open;
   const main=document.querySelector("#examView .main");if(main)main.classList.toggle("palette-shift",open);
-  if(b)b.classList.toggle("open",open);
+  const toggle=document.getElementById("examProgressBtn");if(toggle)toggle.setAttribute("aria-expanded",String(open));
+  if(b){b.classList.toggle("open",open);b.setAttribute("aria-hidden",String(!open))}
   if(open)renderQuestionProgress();
+  else if(d.contains(document.activeElement))toggle?.focus({preventScroll:true});
+}
+function applyQuestionSidebarState(){
+  syncQuestionSidebar(getQuestionSidebarState());
 }
 
 function toggleQuestionProgress(){
   const d=document.getElementById("examProgressDrawer");
-  const b=document.querySelector(".exam-progress-backdrop");
   if(!d)return;
   const open=!d.classList.contains("open");
+  if(open&&!questions.length){toast("Load a quiz to use the question palette");return}
   setQuestionSidebarState(open);
-  d.classList.toggle("open",open);
-  const main=document.querySelector("#examView .main");if(main)main.classList.toggle("palette-shift",open);
-  if(b)b.classList.toggle("open",open);
-  if(open)renderQuestionProgress();
+  syncQuestionSidebar(open);
+  if(open)document.querySelector("#examProgressGrid .progress-q.current")?.focus({preventScroll:true});
 }
 function renderQuestionProgress(){
   const grid=document.getElementById("examProgressGrid");
-  if(!grid||!questions.length)return;
-  grid.innerHTML=questions.map((q,i)=>{
-    let cls="";
-    if(i===current)cls+=" current";
-    if(answers[i])cls+=" answered";
-    if(reviews.has(i))cls+=" review";
-    return `<button class="progress-q${cls}" onclick="jumpToQuestion(${i})">${i+1}</button>`;
-  }).join("");
+  if(!grid)return;
+  if(!questions.length){grid.innerHTML="";return}
+  renderQuestionNavigation(grid,"progress-q",jumpToQuestion);
 }
 
 
@@ -1774,8 +2022,10 @@ function jumpToQuestion(i){
   renderQuestionProgress();
   saveSessionSoon();
   if(window.innerWidth <= 800) {
-    toggleQuestionProgress();
+    if(document.getElementById("examProgressDrawer")?.classList.contains("open"))toggleQuestionProgress();
     window.scrollTo({top: 0, behavior: "smooth"});
+  }else if(document.getElementById("examProgressDrawer")?.classList.contains("open")){
+    document.querySelector("#examProgressGrid .progress-q.current")?.focus({preventScroll:true});
   }
 }
 
@@ -1841,18 +2091,184 @@ function readHomeFile(e){
  const r=new FileReader();r.onload=()=>{document.getElementById("homeJson").value=r.result;document.getElementById("homeJsonStatus").textContent="JSON loaded — click Load & Start.";document.getElementById("homeJsonStatus").style.color="var(--good)"};r.readAsText(f)
 }
 
+let studyCalendarMonth=new Date(new Date().getFullYear(),new Date().getMonth(),1);
+let studySelectedDate=null,studySearchQuery="",studySearchScope="all",studySearchTimer=null;
+function studyDateKey(value){
+ const date=new Date(value);
+ if(Number.isNaN(date.getTime()))return null;
+ return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+}
+function getHomeStudyHistory(sessions,results){
+ const history=[];
+ sessions.forEach(session=>{
+   const date=studyDateKey(session.updatedAt||session.createdAt);
+   const answered=getSessionAnsweredCount(session);
+   if(date&&answered)history.push({kind:"session",sessionId:session.id,examId:session.examId,name:session.name,mode:session.mode,answered,total:session.questions?.length||0,date,updatedAt:session.updatedAt||session.createdAt,examFinished:session.examFinished});
+ });
+ results.forEach(result=>{
+   const date=studyDateKey(result.date||result.timestamp);
+   if(!date)return;
+   for(let index=history.length-1;index>=0;index--){
+     if(history[index].kind==="session"&&result.examId&&history[index].examId===result.examId&&history[index].date===date)history.splice(index,1);
+   }
+   history.push({kind:"result",resultId:result.id,examId:result.examId,name:result.name,mode:result.mode,answered:Number(result.correct||0)+Number(result.wrong||0),total:Number(result.total)||0,percent:Number(result.percent)||0,date,updatedAt:result.date||result.timestamp});
+ });
+ return history.sort((a,b)=>String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")));
+}
+function chooseStudyDate(value){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(value||""))return;
+ const date=new Date(`${value}T12:00:00`);
+ if(studyDateKey(date)!==value)return;
+ studySelectedDate=value;studyCalendarMonth=new Date(date.getFullYear(),date.getMonth(),1);renderHome();
+}
+function shiftStudyMonth(delta){
+ studyCalendarMonth=new Date(studyCalendarMonth.getFullYear(),studyCalendarMonth.getMonth()+delta,1);renderHome();
+}
+function clearStudyDate(){studySelectedDate=null;renderHome()}
+function studySearchText(value){
+ return String(value??"").normalize("NFKD").replace(/\p{M}/gu,"").toLowerCase().replace(/\s+/g," ").trim();
+}
+function studySessionRecord(session){
+ return {kind:"session",sessionId:session.id,examId:session.examId,name:session.name,mode:session.mode,
+  answered:getSessionAnsweredCount(session),total:session.questions?.length||0,updatedAt:session.updatedAt||session.createdAt};
+}
+function studySearchInventory(sessions,results,exams){
+ const records=[],seen=new Set(),add=(item,key)=>{if(!seen.has(key)){seen.add(key);records.push(item)}};
+ const newest=list=>list.slice().sort((a,b)=>String(b.updatedAt||b.date||b.timestamp||"").localeCompare(String(a.updatedAt||a.date||a.timestamp||"")));
+ newest(sessions.filter(s=>!s.examFinished)).forEach(s=>add(studySessionRecord(s),s.examId||s.id));
+ newest(results).forEach(r=>add({kind:"result",resultId:r.id,examId:r.examId,name:r.name,mode:r.mode,
+  answered:Number(r.correct||0)+Number(r.wrong||0),total:r.total,percent:r.percent,updatedAt:r.date||r.timestamp},r.examId||r.id));
+ newest(sessions.filter(s=>s.examFinished)).forEach(s=>add(studySessionRecord(s),s.examId||s.id));
+ newest(exams).forEach(e=>add({kind:"quiz",examId:e.id,name:e.name,answered:0,total:e.questions?.length||0,updatedAt:e.updatedAt},e.id));
+ return records;
+}
+function studyFindMatch(item,source,tokens){
+ const title=studySearchText(item.name),reveal=source?.mode==="practice"||source?.examFinished===true||item.kind==="result";
+ const parts=(Array.isArray(source?.questions)?source.questions:[]).map((q,index)=>{
+  if(!q||typeof q!=="object")return {index,text:"",normalized:""};
+  const text=[q.text||q.question||"",...(Array.isArray(q.options)?q.options:[]),q.section||"",q.hint||"",
+   ...(reveal?[q.explanation||""]:[]),...(Array.isArray(q.pairs)?q.pairs.map(p=>p?.left||""):[])].join(" ");
+  return {index,text,normalized:studySearchText(text)};
+ });
+ const body=parts.map(p=>p.normalized).join(" ");
+ const haystack=studySearchScope==="title"?title:studySearchScope==="content"?body:title+" "+body;
+ if(!tokens.every(token=>haystack.includes(token)))return null;
+ const titleMatch=tokens.every(token=>title.includes(token));
+ const hits=parts.map(p=>({...p,score:tokens.filter(token=>p.normalized.includes(token)).length}))
+  .filter(p=>p.score>0).sort((a,b)=>b.score-a.score||a.index-b.index);
+ let snippet="";
+ if(studySearchScope!=="title"&&hits.length){
+  const hit=hits[0],text=hit.text.replace(/\s+/g," ").trim();
+  const position=Math.max(0,...tokens.map(t=>hit.normalized.indexOf(t)).filter(n=>n>=0).slice(0,1));
+  const start=Math.max(0,position-45);
+  snippet=`Question ${hit.index+1} · ${start?"…":""}${text.slice(start,start+150)}${text.length>start+150?"…":""}`;
+ }
+ return {titleMatch,snippet};
+}
+function refreshStudySearch(restoreFocus=false){
+ const host=document.getElementById("homeSessionsList");if(!host)return;
+ const input=document.getElementById("studyQuizSearch"),start=input?.selectionStart,end=input?.selectionEnd;
+ host.innerHTML=renderStudyWorkspace(get(K.sessions,[]),get(K.results,[]));
+ if(restoreFocus){
+  const next=document.getElementById("studyQuizSearch");
+  if(next){next.focus({preventScroll:true});if(start!=null)next.setSelectionRange(start,end??start)}
+ }
+}
+function renderStudyWorkspace(sessions,results){
+ const history=getHomeStudyHistory(sessions,results),year=studyCalendarMonth.getFullYear(),month=studyCalendarMonth.getMonth();
+ const dayCounts=new Map();history.forEach(item=>dayCounts.set(item.date,(dayCounts.get(item.date)||0)+1));
+ const offset=(new Date(year,month,1).getDay()+6)%7,days=new Date(year,month+1,0).getDate(),today=studyDateKey(new Date());
+ const dayButtons=Array.from({length:offset},()=>"<span class=\"study-day-spacer\" aria-hidden=\"true\"></span>");
+ for(let day=1;day<=days;day++){
+   const key=studyDateKey(new Date(year,month,day)),count=dayCounts.get(key)||0;
+   const label=new Date(year,month,day).toLocaleDateString(undefined,{dateStyle:"full"});
+   dayButtons.push(`<button class="study-day${key===today?" is-today":""}${key===studySelectedDate?" is-selected":""}" type="button" aria-label="${esc(label)}${count?`, ${count} study records`:""}" aria-pressed="${key===studySelectedDate}" onclick="chooseStudyDate('${key}')"><span>${day}</span>${count?"<i aria-hidden=\"true\"></i>":""}</button>`);
+ }
+ const active=sessions.filter(session=>!session.examFinished).map(session=>({kind:"session",sessionId:session.id,examId:session.examId,name:session.name,mode:session.mode,answered:getSessionAnsweredCount(session),total:session.questions?.length||0,updatedAt:session.updatedAt||session.createdAt}));
+ const savedExams=get(K.exams,[]),sessionMap=new Map(sessions.map(s=>[s.id,s])),resultMap=new Map(results.map(r=>[r.id,r])),examMap=new Map(savedExams.map(e=>[e.id,e]));
+ const sourceFor=item=>item.kind==="result"?resultMap.get(item.resultId):item.sessionId?sessionMap.get(item.sessionId)||examMap.get(item.examId):examMap.get(item.examId);
+ const tokens=[...new Set(studySearchText(studySearchQuery).split(" ").filter(Boolean))],searching=tokens.length>0;
+ let records=studySelectedDate?history.filter(item=>item.date===studySelectedDate):searching?studySearchInventory(sessions,results,savedExams):active;
+ if(searching){
+  records=records.filter(item=>item.kind!=="flashcards")
+   .map(item=>({...item,match:studyFindMatch(item,sourceFor(item),tokens)}))
+   .filter(item=>item.match)
+   .sort((a,b)=>Number(b.match.titleMatch)-Number(a.match.titleMatch)||String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")));
+ }
+ const title=studySelectedDate?new Date(`${studySelectedDate}T12:00:00`).toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric",year:"numeric"}):searching?"Matching quizzes":"In progress";
+ const cards=records.map(item=>{
+   const session=item.sessionId&&sessions.find(s=>s.id===item.sessionId),completed=item.kind==="result"||item.examFinished;
+   const progress=Math.min(100,Math.round((item.answered||0)/Math.max(item.total||0,1)*100));
+   const updated=item.updatedAt?new Date(item.updatedAt):null;
+   const time=updated&&!Number.isNaN(updated.getTime())?updated.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"";
+   const kind=item.kind==="result"?"result":session?"session":"quiz",idValue=item.kind==="result"?item.resultId:session?session.id:item.examId;
+   const menu=idValue?`<details class="study-session-menu"><summary aria-label="Quiz options for ${esc(item.name||"Untitled quiz")}" title="Quiz options">⋯</summary><div class="study-session-menu-panel"><button type="button" data-download-study-quiz="${esc(idValue)}" data-study-quiz-kind="${kind}">Download quiz JSON</button><button type="button" data-rename-study-quiz="${esc(idValue)}" data-study-quiz-kind="${kind}">Edit title</button><button type="button" class="study-menu-delete" data-delete-study-quiz="${esc(idValue)}" data-study-quiz-kind="${kind}">Delete saved quiz</button></div></details>`:"";
+   const action=session&&!completed?"session":item.examId&&getExamRecord(item.examId)?"quiz":"";
+   const actionId=session&&!completed?session.id:item.examId||"";
+   const actionLabel=action==="session"?"Continue":item.kind==="result"||completed?"Retake":"Start";
+   return `<article class="study-session-card">
+     <div class="study-card-meta"><span>${item.kind==="result"?"Completed":item.kind==="quiz"?"Saved quiz":item.mode==="practice"?"Practice":"Exam"}</span><div class="study-card-status">${completed?"Completed":item.kind==="quiz"?"Ready to start":"Progress saved"}${menu}</div></div>
+     <h4>${esc(item.name||"Untitled quiz")}</h4>${item.match?.snippet?`<p class="study-search-match">${esc(item.match.snippet)}</p>`:""}
+     <p>${item.kind==="result"?`${item.percent}% score · `:""}${item.answered||0} / ${item.total||0} answered</p>
+     <div class="study-progress" role="progressbar" aria-label="Answered questions" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div>
+     <div class="study-card-footer"><small>${esc(time)}</small>${action?`<button class="btn" type="button" data-study-open="${action}" data-study-id="${esc(actionId)}">${actionLabel} →</button>`:'<small>Quiz no longer saved</small>'}</div>
+   </article>`;
+ }).join("");
+ const searchBar=`<div class="study-search-bar"><input id="studyQuizSearch" type="search" maxlength="160" value="${esc(studySearchQuery)}" placeholder="Search previous quizzes by topic…" aria-label="Search previous quiz titles and content" aria-controls="studySearchResults" autocomplete="off"><select id="studySearchScope" aria-label="Search in"><option value="all"${studySearchScope==="all"?" selected":""}>Title & content</option><option value="title"${studySearchScope==="title"?" selected":""}>Title only</option><option value="content"${studySearchScope==="content"?" selected":""}>Content only</option></select>${searching?'<button class="btn" type="button" data-clear-study-search aria-label="Clear quiz search">×</button>':""}</div>`;
+ const emptyTitle=searching?"No matching quizzes":studySelectedDate?"No recorded study on this date":"Nothing to resume yet";
+ const emptyCopy=searching?"Try fewer keywords or another search scope. Clear the date filter to search all saved quizzes.":studySelectedDate?"Choose a marked date to see its saved activity.":"Load a CBQ and your progress will appear here.";
+ const listTitle=studySelectedDate?title:searching?title:"In progress";
+ return `<div class="study-workspace">
+   <div class="study-calendar-column">
+     <div class="study-month-nav"><button class="btn" type="button" aria-label="Previous month" onclick="shiftStudyMonth(-1)">‹</button><strong>${studyCalendarMonth.toLocaleDateString(undefined,{month:"long",year:"numeric"})}</strong><button class="btn" type="button" aria-label="Next month" onclick="shiftStudyMonth(1)">›</button></div>
+     <div class="study-weekdays">${["M","T","W","T","F","S","S"].map(day=>`<span>${day}</span>`).join("")}</div>
+     <div class="study-calendar-days">${dayButtons.join("")}</div>
+     <p class="study-calendar-legend"><i aria-hidden="true"></i> Saved study activity</p>
+     <label class="study-date-label" for="studyDateJump">Go to date</label><input id="studyDateJump" type="date" value="${studySelectedDate||""}" onchange="chooseStudyDate(this.value)">
+     <div class="study-date-actions"><button class="btn" type="button" onclick="chooseStudyDate('${today}')">Today</button><button class="btn" type="button" onclick="clearStudyDate()">All sessions</button></div>
+   </div>
+   <div class="study-content-column">${searchBar}<div class="study-list-heading"><h4>${esc(listTitle)}</h4><span>${records.length} ${studySelectedDate?"records":searching?"quizzes":"sessions"}</span></div><div id="studySearchResults" class="study-session-grid">${cards||`<div class="study-empty"><strong>${emptyTitle}</strong><p>${emptyCopy}</p></div>`}</div></div>
+ </div>`;
+}
+document.addEventListener("click",event=>{
+ if(event.target.closest("[data-clear-study-search]")){clearTimeout(studySearchTimer);studySearchQuery="";refreshStudySearch(true);return}
+ const open=event.target.closest("[data-study-open]");
+ if(open){if(open.dataset.studyOpen==="session")restoreSession(open.dataset.studyId);else openRecentQuiz(open.dataset.studyId);return}
+ const menu=event.target.closest(".study-session-menu");
+ document.querySelectorAll(".study-session-menu[open]").forEach(item=>{if(item!==menu)item.open=false});
+ const download=event.target.closest("[data-download-study-quiz]");
+ if(download){downloadSavedQuiz(download.dataset.studyQuizKind,download.dataset.downloadStudyQuiz);if(menu)menu.open=false;return}
+ const rename=event.target.closest("[data-rename-study-quiz]");
+ if(rename){renameSavedQuiz(rename.dataset.studyQuizKind,rename.dataset.renameStudyQuiz);if(menu)menu.open=false;document.getElementById("studyQuizSearch")?.focus({preventScroll:true});return}
+ const remove=event.target.closest("[data-delete-study-quiz]");
+ if(remove){deleteSavedQuiz(remove.dataset.studyQuizKind,remove.dataset.deleteStudyQuiz);if(menu)menu.open=false;document.getElementById("studyQuizSearch")?.focus({preventScroll:true})}
+});
+document.addEventListener("input",event=>{
+ if(event.target.id!=="studyQuizSearch"||event.isComposing)return;
+ studySearchQuery=event.target.value;clearTimeout(studySearchTimer);
+ studySearchTimer=setTimeout(()=>refreshStudySearch(document.activeElement?.id==="studyQuizSearch"),140);
+});
+document.addEventListener("compositionend",event=>{
+ if(event.target.id==="studyQuizSearch")event.target.dispatchEvent(new Event("input",{bubbles:true}));
+});
+document.addEventListener("change",event=>{
+ if(event.target.id!=="studySearchScope"||!["all","title","content"].includes(event.target.value))return;
+ clearTimeout(studySearchTimer);studySearchScope=event.target.value;refreshStudySearch();
+ document.getElementById("studySearchScope")?.focus({preventScroll:true});
+});
+document.addEventListener("keydown",event=>{
+ if(event.key!=="Escape")return;
+ const menu=document.querySelector(".study-session-menu[open]");
+ if(menu){menu.open=false;menu.querySelector("summary").focus({preventScroll:true})}
+});
 function renderHome(){
  renderRecentQuizzes();
- const rs=get(K.results,[]),ss=get(K.sessions,[]),ps=get(K.plans,[]);
- const avg=rs.length?Math.round(rs.reduce((a,r)=>a+r.percent,0)/rs.length):0,best=rs.length?Math.max(...rs.map(r=>r.percent)):0;
+ const rs=get(K.results,[]),ss=get(K.sessions,[]);
  const solved=rs.reduce((a,r)=>a+(Number(r.correct)||0),0);
- const homeMetrics={homeTests:rs.length,homeQuestions:solved,homePomodoro:pomodoroStats.sessions,homeStudyMinutes:pomodoroStats.minutes};
+ const homeMetrics={homeTests:rs.length,homeQuestions:solved};
  Object.entries(homeMetrics).forEach(([key,value])=>{const el=document.getElementById(key);if(el)el.textContent=value});
- const tip=rs.length?(rs[0].percent>=80?"You are in a strong rhythm. Try a timed Exam Mode session next.":rs[0].percent>=60?"Good momentum. Use Practice Mode on your weakest concepts.":"Slow down, break concepts into CBQs, then retest."): "Paste a CBQ below and begin a focused session.";
- const hst=document.getElementById("homeStudyTip"); if(hst) hst.textContent=tip;
- if(!document.getElementById("homePlansList"))return;
-
- document.getElementById("homePlansList").innerHTML=ps.length?ps.map(x=>`<div class="planrow"><div class="planmain"><strong>${esc(x.name)}</strong><small>${x.date}${x.time?" · "+x.time:""}</small></div><button class="btn" onclick="startPlan('${x.id}')">Start</button></div>`).join(""):'<div class="empty">No future tests planned.</div>';
+ const studyList=document.getElementById("homeSessionsList");
+ if(studyList)studyList.innerHTML=renderStudyWorkspace(ss,rs);
 }
 
 
@@ -1863,29 +2279,30 @@ function syncExamTitleBar(){
     if(bar){bar.textContent=examName;bar.title=examName;}
     if(globalTitle){globalTitle.textContent=examName;globalTitle.title=examName;}
   }
-  const oldTimer=document.getElementById("timer");
-  const globalTimer=document.getElementById("globalTimer");
-  if(oldTimer&&globalTimer)globalTimer.textContent=oldTimer.textContent;
 }
 
 function showView(name){
  closeMobileNav();
- if(name==="exam" && (!questions || questions.length===0)){
+ const resolvedName = ["home","exam","settings"].includes(name) ? name : "home";
+ if(resolvedName === "exam" && (!questions || questions.length===0)){
   toast("No quiz loaded. Please open a CBQ first.");
-  name="home";
+  return showView("home");
  }
- if(name==="exam"){updateTimerUI();updateModeUI();}
- document.body.classList.toggle("exam-active",name==="exam");
+ if(resolvedName === "exam"){updateTimerUI();updateModeUI();}
+ document.body.classList.toggle("exam-active",resolvedName==="exam");
  window.scrollTo({top:0,behavior:"smooth"});
- ["home","exam","dashboard","testResults","planner","settings"].forEach(x=>document.getElementById(x+"View").classList.toggle("active",x===name));
- ["navHome","navExam","navDashboard","navPlanner","navSettings"].forEach(x=>document.getElementById(x).classList.remove("active"));
- if(name!=="testResults")document.getElementById({home:"navHome",exam:"navExam",dashboard:"navDashboard",planner:"navPlanner",settings:"navSettings"}[name]).classList.add("active");
- if(name==="home"){renderHome();if(typeof renderTodos==='function')renderTodos();}if(name==="dashboard"){renderDashboard();renderExamDeadline();}if(name==="planner")renderPlans();if(name==="exam"){setTimeout(()=>{applyQuestionSidebarState();syncExamTitleBar()},0)}
- if(name==="settings"){const feedback=document.getElementById("instantFeedback");if(feedback)feedback.checked=!!settings.instantFeedback;
- const duration=document.getElementById("defaultDuration");if(duration)duration.value=String(settings.defaultDuration||30);
- const marks=document.getElementById("defaultMarks");if(marks)marks.value=settings.defaultMarks??1;
- const negative=document.getElementById("defaultNegative");if(negative)negative.value=settings.defaultNegative??0;
- updateTheme();updateModeUI()}
+ ["home","exam","settings"].forEach(x=>{
+  const el=document.getElementById(x+"View");
+  if(el)el.classList.toggle("active",x===resolvedName);
+ });
+ ["navHome","navExam","navSettings"].forEach(x=>{
+  const el=document.getElementById(x); if(el)el.classList.remove("active");
+ });
+ const activeNav=document.getElementById({home:"navHome",exam:"navExam",settings:"navSettings"}[resolvedName]);
+ if(activeNav)activeNav.classList.add("active");
+ if(resolvedName==="home"){renderHome();if(typeof renderTodos==='function')renderTodos();}
+ if(resolvedName==="settings")updatePersistentStorageInfo();
+ if(resolvedName==="exam"){setTimeout(()=>{applyQuestionSidebarState();syncExamTitleBar()},0)}
 }
 function toggleMobileNav(){document.body.classList.toggle("mobile-nav-open")}
 function closeMobileNav(){document.body.classList.remove("mobile-nav-open")}
@@ -1969,32 +2386,9 @@ function practiceCorrectAnswerHTML(q){
 
 function viewPracticeAnswer(){
   if(mode!=="practice"||!questions.length)return;
-  const q=questions[current];
   checkedQuestions.add(current);
   render();
-
-  // Create a real answer card if it does not already exist.
-  let panel=document.getElementById("practiceAnswerPanel");
-  if(!panel){
-    panel=document.createElement("div");
-    panel.id="practiceAnswerPanel";
-    panel.className="practice-answer-panel";
-    const ex=document.getElementById("explanation");
-    if(ex&&ex.parentNode)ex.parentNode.insertBefore(panel,ex);
-    else document.getElementById("options").after(panel);
-  }
-  panel.dataset.question=String(current);
-  panel.innerHTML=`<div class="answer-label">Correct Answer</div><div class="answer-value">${practiceCorrectAnswerHTML(q)}</div>`;
-  panel.style.display="block";
-  renderAllQuizMath(panel);
-
-  const ex=document.getElementById("explanation");
-  if(ex&&q.explanation){
-    ex.style.display="block";
-    ex.innerHTML="<strong>💡 Explanation</strong><div class='explanation-content' style='white-space:pre-wrap;'>"+esc(q.explanation)+"</div>";
-    renderAllQuizMath(ex);
-  }
-  highlightCorrectAnswerForView(q);
+  saveSessionSoon();
 }
 function getCorrectOptionIndex(q){
   if(!Array.isArray(q.options))return -1;
@@ -2072,27 +2466,13 @@ function checkCurrentAnswer(){
  if(!answerIsPresent(chosen,q)){toast("Answer the question first");return}
  const wasChecked=checkedQuestions.has(current);
  checkedQuestions.add(current);
- if(!wasChecked)playAnswerSound(chosen===q.answer);
- const fb=document.getElementById("feedback");
- if(!chosen){toast("Choose an option first");return}
- const correct=isQuestionCorrect(q,chosen);
- fb.textContent=correct?"✓ Correct":"✕ Incorrect";
- fb.style.color=correct?"var(--good)":"var(--bad)";
-
- const ex=document.getElementById("explanation");
- if(q.explanation){
-   ex.style.display="block";
-   ex.innerHTML="<strong>💡 Explanation</strong><div style='margin-top:6px;line-height:1.6;white-space:pre-wrap;'>"+esc(q.explanation)+"</div>";
-   renderAllQuizMath(ex);
-   renderAllQuizMath(document.getElementById("explanation"));
+ if(!wasChecked&&mode==="practice")playAnswerSound(isQuestionCorrect(q,chosen));
+ if(mode==="practice")render();
+ else{
+   const fb=document.getElementById("feedback");
+   fb.textContent="✓ Answer recorded";fb.style.color="var(--muted)";fb.removeAttribute("data-result");
  }
- // In practice mode, checking is always allowed. In exam mode it is
- // intentionally feedback-only and does not reveal correctness until submit.
- if(mode==="exam"){
-   fb.textContent="✓ Answer recorded";
-   fb.style.color="var(--muted)";
-   if(ex)ex.style.display="none";
- }
+ saveSessionSoon();
  flashKey("Enter");
 }
 
@@ -2111,30 +2491,6 @@ setTimeout(()=>{if(document.getElementById("examProgressDrawer")?.classList.cont
 setInterval(()=>{if(document.getElementById("examProgressDrawer")?.classList.contains("open"))renderQuestionProgress()},250);
 
 setInterval(()=>{
-  if(universalStudyTimerRunning){
-    if(universalStudyTimerMode === 'stopwatch') {
-      universalStudyTimerSeconds++;
-    } else {
-      universalStudyTimerSeconds--;
-      if(universalStudyTimerSeconds <= 0) {
-         universalStudyTimerSeconds=0;
-         if(pomodoroPhase==='focus'){
-           pomodoroStats.sessions++;
-           pomodoroStats.minutes+=25;
-           savePomodoroStats();
-           pomodoroCycle++;
-           toast("Focus session complete. Take a 5-minute break.");
-         }else{
-           toast("Break complete. Ready for another focus session.");
-         }
-         universalStudyTimerRunning = false;
-         const btn = document.getElementById("universalTimerToggleBtn");
-         if(btn) btn.textContent = "▶ Resume";
-      }
-    }
-    updateUniversalTimerUI();
-  }
-
   if(!timerState || !timerState.running || examFinished)return;
   if(mode==="practice"){
     // Practice timer logic removed, but keeping the block in case of future extensions
@@ -2151,6 +2507,8 @@ setInterval(()=>{
 
 window.addEventListener("beforeunload",saveSession);
 
+if(typeof initPromptLibrary==="function")initPromptLibrary();
 applySettings();timerState.examSeconds=seconds;timerState.practiceSeconds=5*60;timerState.running=false;updateTimerUI();render();renderSessions();renderDashboard();renderPlans();renderHome();renderTodos();
 
 initPersistentBackup();
+updatePersistentStorageInfo();

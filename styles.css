@@ -356,16 +356,22 @@ body:has(#examView.view.active) .topnav button:not(#navHome){display:none}
 }
 .exam-progress-btn:hover{border-color:var(--primary);color:var(--primary)}
 .exam-progress-drawer{
-  position:fixed;top:68px;right:-340px;width:330px;height:calc(100vh - 68px);z-index:120;
+  position:fixed;top:76px;right:12px;width:min(340px,calc(100vw - 24px));height:calc(100vh - 88px);z-index:40;
   background:var(--surface);border-left:1px solid var(--line);
-  box-shadow:-15px 0 45px rgba(20,25,35,.16);padding:20px;
-  transition:right .2s ease;overflow:auto;
+  box-shadow:-15px 0 45px rgba(20,25,35,.16);padding:20px;box-sizing:border-box;
+  transform:translateX(calc(100% + 24px));opacity:0;visibility:hidden;pointer-events:none;
+  transition:transform .24s cubic-bezier(.2,.8,.2,1),opacity .18s ease,visibility 0s linear .24s;
+  overflow:auto;overscroll-behavior:contain;
 }
-.exam-progress-drawer.open{right:0}
+.exam-progress-drawer.open{
+  transform:translateX(0);opacity:1;visibility:visible;pointer-events:auto;
+  transition:transform .24s cubic-bezier(.2,.8,.2,1),opacity .18s ease,visibility 0s;
+}
 .exam-progress-backdrop{
-  display:none;position:fixed;inset:0;top:68px;background:rgba(10,15,25,.28);z-index:119;
+  display:block;position:fixed;inset:68px 0 0;background:rgba(10,15,25,.28);z-index:35;
+  opacity:0;visibility:hidden;pointer-events:none;transition:opacity .18s ease,visibility 0s linear .18s;
 }
-.exam-progress-backdrop.open{display:block}
+.exam-progress-backdrop.open{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .18s ease,visibility 0s}
 .drawer-head{display:flex;justify-content:space-between;align-items:center;font-size:14px;margin-bottom:14px}
 .drawer-close{border:0;background:transparent;font-size:22px;color:var(--muted);cursor:pointer}
 .drawer-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px;color:var(--muted);font-size:9px}
@@ -381,7 +387,13 @@ body:has(#examView.view.active) .topnav button:not(#navHome){display:none}
 .progress-q.answered{background:#e8f7ef;border-color:#a9dfc3;color:#168354}
 .progress-q.review{box-shadow:inset 0 0 0 2px #d7a33b}
 .progress-q.current.answered{background:#eef1ff}
-@media(max-width:600px){.exam-progress-drawer{width:290px}.exam-progress-grid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:800px){
+  .exam-progress-drawer{top:68px;right:8px;width:min(360px,calc(100vw - 16px));height:calc(100vh - 76px);padding:16px}
+  .exam-progress-grid{grid-template-columns:repeat(4,1fr)}
+}
+@media(prefers-reduced-motion:reduce){
+  .exam-progress-drawer,.exam-progress-backdrop{transition:none!important}
+}
 
 /* ===== Exam countdown ===== */
 #homeExamCountdown{font-size:24px;margin:5px 0 4px}
@@ -408,21 +420,6 @@ body:has(#examView.view.active) .topnav button:not(#navHome){display:none}
 .exam-progress-drawer{z-index:10001 !important}
 .exam-progress-backdrop{z-index:10000 !important}
 
-
-/* Persistent question navigator */
-@media(min-width:801px){
-  .exam-progress-drawer.open{
-    right:0 !important;
-    width:285px !important;
-  }
-  .exam-progress-backdrop.open{display:none !important}
-  #examView .main{
-    transition:width .2s ease,margin-right .2s ease;
-  }
-}
-@media(max-width:800px){
-  .exam-progress-drawer.open{right:0 !important}
-}
 
 /* ===== Responsive exam workspace ===== */
 #examView{width:100%;min-width:0;overflow-x:hidden}
@@ -536,11 +533,6 @@ body:has(#examView.view.active) .topnav button:not(#navHome){display:none}
   #examView .modepicker{width:100%}
   #examView .modebtn{padding:6px 8px !important;font-size:9px !important}
   #examView .actions .btn{flex:1 1 120px}
-  .exam-progress-drawer{
-    width:min(320px,88vw) !important;
-    right:calc(-1 * min(320px,88vw)) !important;
-    padding:16px !important;
-  }
   .exam-progress-grid{grid-template-columns:repeat(4,1fr) !important;gap:6px !important}
   .progress-q{height:38px !important}
 }
@@ -1471,7 +1463,6 @@ pre{overflow:auto}
 
 /* Exam palette must never cover the timer/submit controls */
 #examView .exam-head{position:relative;z-index:20}
-#examView .exam-progress-drawer{z-index:40}
 #examView .exam-progress-backdrop{z-index:35}
 #examView .exam-head > div:first-child{min-width:0}
 #examView .exam-progress-btn,#examView #examTimerControl{position:relative;z-index:60}
@@ -1936,9 +1927,8 @@ body:after{content:"";position:fixed;inset:auto -10vw -24vh auto;width:48vw;heig
 .recent-quiz-row{align-items:center;gap:12px}
 .recent-quiz-row .btn{flex:0 0 auto}
 
-/* The question palette is an overlay, not a second exam column. */
+/* Keep the exam content centered when the question palette is open. */
 @media(min-width:801px){
-  #examView{position:relative}
   #examView .main,
   body:has(.exam-progress-drawer.open) #examView .main{
     width:min(920px,calc(100% - 24px)) !important;
@@ -1946,13 +1936,6 @@ body:after{content:"";position:fixed;inset:auto -10vw -24vh auto;width:48vw;heig
     margin:12px auto !important;
     padding-right:0 !important;
   }
-  #examView .exam-progress-drawer{
-    position:absolute !important;
-    top:0 !important;
-    right:-340px !important;
-    height:calc(100vh - 68px) !important;
-  }
-  #examView .exam-progress-drawer.open{right:0 !important}
 }
 
 /* Exam reading and controls: keep the content calm, compact, and scannable. */
@@ -2184,3 +2167,169 @@ body[class*="question-text-"] #examView #explanation{font-size:calc(15px*var(--q
   #examView .question-prompt{margin-top:14px;font-size:18px}
   #examView .question-palette-section-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
+
+/* QuizFlow-inspired Home study cards, calendar, and todo list. */
+#homeView .dashcols{align-items:start}
+#homeView .home-todo-panel,#homeView .home-continue-panel{min-width:0;padding:24px;border-radius:16px}
+#homeView .home-todo-panel .panel-heading,#homeView .home-continue-panel .panel-heading{flex-wrap:wrap;gap:12px 20px;margin:0 0 18px}
+#homeView .home-todo-panel .panel-heading h3,#homeView .home-continue-panel .panel-heading h3{margin:0 0 5px;font-size:19px;line-height:1.35}
+#homeView .home-todo-panel .panel-heading small,#homeView .home-continue-panel .panel-heading small{font-size:13px;line-height:1.5}
+.todo-summary{flex:none;padding:6px 10px;border-radius:999px;background:var(--surface2);color:var(--muted);font-size:11px;font-weight:650}
+.todo-app{display:grid;gap:12px}
+.todo-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,auto) auto;gap:8px}
+.todo-form input{box-sizing:border-box;min-width:0;min-height:42px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;line-height:1.5}
+.todo-form input:focus-visible,#studyDateJump:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.todo-form input[type=date]{font-family:inherit}
+.todo-form .btn{min-height:42px;white-space:nowrap}
+.todo-list{display:grid;gap:8px}
+.todo-item{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.todo-item-label{display:flex;align-items:center;gap:10px;min-width:0;flex:1;cursor:pointer}
+.todo-item-label input{width:17px;height:17px;flex:none;margin:0;accent-color:var(--primary)}
+.todo-item-copy{display:grid;gap:3px;min-width:0}
+.todo-item-copy strong{overflow-wrap:anywhere;font-size:13px;font-weight:650}
+.todo-item-copy small{color:var(--muted);font-size:11px}
+.todo-item.is-done .todo-item-copy strong{text-decoration:line-through;color:var(--muted)}
+.todo-delete{display:grid;place-items:center;flex:none;width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:20px;line-height:1}
+.todo-delete:hover{background:color-mix(in srgb,var(--bad) 9%,var(--surface));color:var(--bad)}
+.todo-empty,.study-empty{display:grid;place-content:center;min-height:100px;padding:18px;border:1px dashed var(--line);border-radius:11px;text-align:center}
+.todo-empty strong,.study-empty strong{font-size:14px}
+.todo-empty span,.study-empty p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.study-summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:var(--muted);font-size:12px}
+.study-summary>span:not(.study-summary-separator){white-space:nowrap}
+.study-summary strong{margin-right:3px;color:var(--primary);font-size:15px;font-variant-numeric:tabular-nums}
+.study-summary-separator{opacity:.6}
+.study-workspace{display:grid;grid-template-columns:minmax(205px,245px) minmax(0,1fr);gap:22px;align-items:start}
+.study-calendar-column{min-width:0;padding-right:20px;border-right:1px solid var(--line)}
+.study-month-nav{display:grid;grid-template-columns:36px 1fr 36px;gap:8px;align-items:center}
+.study-month-nav strong{font-size:14px;text-align:center}
+.study-month-nav .btn{min-height:36px;padding:4px;font-size:21px!important}
+.study-weekdays,.study-calendar-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.study-weekdays{margin:14px 0 7px;color:var(--muted);font-size:10px;text-align:center}
+.study-day-spacer{min-width:0}
+.study-day{position:relative;min-width:0;height:34px;padding:0;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--text);font-size:12px}
+.study-day:hover{background:var(--surface2)}
+.study-day.is-today{border-color:var(--line);font-weight:750}
+.study-day.is-selected{background:var(--primary)!important;color:var(--on-primary,#fff)}
+.study-day i,.study-calendar-legend i{display:block;width:4px;height:4px;border-radius:50%;background:var(--primary)}
+.study-day i{position:absolute;bottom:3px;left:calc(50% - 2px)}
+.study-day.is-selected i{background:currentColor}
+.study-calendar-legend{display:flex;align-items:center;gap:7px;margin:10px 0 16px;color:var(--muted);font-size:11px}
+.study-date-label{display:block;margin-bottom:6px;color:var(--muted);font-size:12px;font-weight:600}
+#studyDateJump{width:100%;box-sizing:border-box;min-height:39px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font:inherit}
+.study-date-actions{display:flex;gap:7px;margin-top:8px}
+.study-date-actions .btn{flex:1;min-width:0;padding:7px;font-size:11px!important}
+.study-content-column{min-width:0}
+.study-list-heading{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px}
+.study-list-heading h4{margin:0;font-size:16px}
+.study-list-heading>span{flex:none;color:var(--muted);font-size:11px}
+.study-session-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.study-session-card{display:flex;flex-direction:column;min-width:0;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.study-card-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--muted);font-size:10px}
+.study-session-card h4{margin:11px 0 6px;overflow-wrap:anywhere;font-size:14px;line-height:1.4}
+.study-session-card>p{margin:0 0 10px;color:var(--muted);font-size:11px}
+.study-progress{height:5px;border-radius:8px;background:var(--surface2);overflow:hidden}
+.study-progress i{display:block;height:100%;border-radius:inherit;background:var(--primary)}
+.study-card-footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:9px;margin-top:auto;padding-top:13px}
+.study-card-footer small{color:var(--muted);font-size:10px}
+.study-card-footer .btn{min-height:34px;padding:6px 9px;font-size:11px!important}
+.study-empty{grid-column:1/-1}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+@media(max-width:1050px){
+  #homeView .home-todo-panel,#homeView .home-continue-panel{padding:19px}
+  .study-workspace{grid-template-columns:minmax(190px,220px) minmax(0,1fr);gap:16px}
+  .study-calendar-column{padding-right:14px}
+  .study-session-grid{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  #homeView .dashcols{grid-template-columns:1fr}
+  .study-workspace{grid-template-columns:1fr;gap:20px}
+  .study-calendar-column{padding:0 0 18px;border-right:0;border-bottom:1px solid var(--line)}
+  .study-day{height:40px;font-size:13px}
+  .study-session-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:500px){
+  #homeView .home-todo-panel,#homeView .home-continue-panel{padding:16px}
+  .todo-form{grid-template-columns:minmax(0,1fr) auto}
+  .todo-form input[type=date]{grid-column:1}
+  .todo-form .btn{grid-column:2;grid-row:1/3}
+  .study-session-grid{grid-template-columns:1fr}
+}
+
+/* QuizFlow Home focus layout. */
+#homeView .home-stage{grid-template-columns:minmax(0,1fr) minmax(340px,1fr);gap:24px}
+#homeView .home-stage .hero-copy{
+  min-height:0!important;padding:32px!important;border:0!important;border-radius:0!important;
+  background:transparent!important;box-shadow:none!important;font-family:"DM Sans","Segoe UI",sans-serif
+}
+#homeView .home-stage .hero-copy::before,#homeView .home-stage .hero-copy::after{content:none!important}
+#homeView .hero-copy .hero-kicker{margin-bottom:14px;color:var(--primary);font:600 11px/1.5 "DM Sans",sans-serif;letter-spacing:.08em}
+#homeView .home-stage .hero-copy h1{max-width:520px;margin:0 0 18px;font:600 clamp(28px,3.2vw,42px)/1.18 "DM Sans","Segoe UI",sans-serif;letter-spacing:-.03em}
+#homeView .home-stage .hero-copy p{max-width:42ch;margin:0;color:var(--muted);font:400 16px/1.7 "DM Sans","Segoe UI",sans-serif}
+#homeView .hero-copy .hero-actions{display:flex!important;flex-wrap:wrap;gap:8px 16px;margin-top:24px}
+#homeView .hero-copy .hero-actions .btn{width:auto;min-height:36px;padding:5px 0;border:0!important;border-radius:4px;background:transparent!important;box-shadow:none!important;font:500 13px/1.5 "DM Sans",sans-serif}
+#homeView .hero-copy .hero-actions .btn:hover{text-decoration:underline;text-underline-offset:4px}
+#homeView .home-stage .json-home{padding:24px!important}
+#homeView .json-home-head h3{margin:0 0 14px;font:600 20px/1.4 "DM Sans",sans-serif}
+#homeView .home-stage .home-json-input{min-height:170px;margin-top:14px}
+#homeView .home-stage .paste-status{font:400 12px/1.5 "DM Sans",sans-serif}
+#homeView .study-workspace{grid-template-columns:280px minmax(0,1fr);gap:24px}
+#homeView .study-calendar-column{padding-right:24px}
+#homeView .study-weekdays{margin:16px 0 8px;font-size:12px}
+#homeView .study-day{height:36px;font-size:13px}
+#homeView .study-calendar-legend{margin:12px 0 20px;font-size:12px}
+#homeView .study-date-label{margin-bottom:7px;font-size:13px}
+#homeView #studyDateJump{min-height:42px;padding:8px 10px}
+#homeView .study-date-actions{gap:8px;margin-top:10px}
+#homeView .study-date-actions .btn{padding:8px;font-size:12px!important}
+#homeView .study-list-heading{gap:12px;margin-bottom:16px}
+#homeView .study-list-heading h4{font-size:17px}
+#homeView .study-list-heading>span{font-size:13px}
+#homeView .study-session-grid{gap:16px}
+#homeView .study-session-card{padding:16px}
+#homeView .study-card-meta{font-size:12px}
+#homeView .study-session-card h4{margin:12px 0 8px;font-size:16px}
+#homeView .study-session-card>p{margin-bottom:12px;font-size:13px}
+#homeView .study-card-footer{gap:10px;margin-top:16px;padding-top:0}
+#homeView .study-card-footer small{font-size:12px}
+#homeView .study-card-footer .btn{min-height:38px;padding:8px 10px;font-size:13px!important}
+.study-search-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.study-search-bar input{width:100%;min-width:0;flex:1;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font:400 14px/1.5 "DM Sans",sans-serif}
+.study-search-bar input::placeholder{color:var(--muted);opacity:1}
+.study-search-bar select{max-width:145px;min-height:42px;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);font:400 12px/1.5 "DM Sans",sans-serif}
+.study-search-bar .btn{min-width:32px;padding:5px;border:0;background:transparent}
+.study-search-bar :focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.study-session-card .study-search-match{margin:0 0 12px;color:var(--text);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.study-card-status{display:flex;align-items:center;gap:8px}
+.study-session-menu{position:relative;flex:none}
+.study-session-menu summary{display:grid;place-items:center;width:30px;height:28px;border-radius:7px;list-style:none;color:var(--muted);font-size:22px;line-height:1;cursor:pointer}
+.study-session-menu summary::-webkit-details-marker{display:none}
+.study-session-menu summary:hover,.study-session-menu[open] summary{background:var(--surface2);color:var(--primary)}
+.study-session-menu summary:focus-visible,.study-session-menu-panel button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.study-session-menu-panel{position:absolute;top:calc(100% + 6px);right:0;z-index:20;min-width:155px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--ux-shadow-md)}
+.study-session-menu-panel button{display:block;width:100%;padding:10px 12px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;font-family:inherit;font-size:13px;font-weight:500;line-height:1.4;cursor:pointer}
+.study-session-menu-panel button:hover{background:var(--surface2)}
+.study-session-menu-panel .study-menu-delete{color:var(--bad)}
+.study-session-menu-panel .study-menu-delete:hover{background:color-mix(in srgb,var(--bad) 8%,var(--surface))}
+.study-day:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+#homeView .dashcols{grid-template-columns:minmax(0,1fr)}
+#homeView .home-todo-panel,#homeView .home-continue-panel{grid-column:1/-1}
+@media(min-width:801px){
+  #examView #examProgressDrawer{position:fixed!important;inset:68px 12px auto auto!important;width:270px!important;max-width:none!important;max-height:calc(100vh - 76px)!important;height:fit-content!important}
+  #examView .exam-progress-backdrop{display:none!important}
+}
+@media(max-width:850px){#homeView .home-stage{grid-template-columns:1fr;gap:16px}#homeView .home-stage .hero-copy{padding:12px 8px 20px!important}}
+@media(max-width:800px){
+  #homeView .home-stage{grid-template-columns:1fr;gap:16px}
+  #homeView .home-stage .hero-copy{padding:12px 8px 20px!important}
+  #homeView .study-workspace{grid-template-columns:1fr;gap:24px}
+  #homeView .study-calendar-column{padding:0 0 20px;border-right:0;border-bottom:1px solid var(--line)}
+  #homeView .study-day{height:42px;font-size:14px}
+  #homeView .study-month-nav strong{font-size:16px}
+  #homeView .study-session-grid{grid-template-columns:1fr}
+  #examView #examProgressDrawer{position:fixed!important;inset:68px 8px auto auto!important;width:min(280px,calc(100vw - 16px))!important;max-width:calc(100vw - 16px)!important;max-height:calc(100vh - 76px)!important;height:fit-content!important}
+  #examView .exam-progress-backdrop{inset:0!important;position:fixed!important;z-index:10000!important;background:rgba(12,18,30,.28)}
+}
+@media(max-width:1100px){#homeView .study-session-grid{grid-template-columns:1fr}}
+@media(max-width:450px){#homeView .study-search-bar{flex-wrap:wrap}#homeView .study-search-bar input{flex-basis:calc(100% - 40px)}#homeView .study-search-bar select{max-width:none;min-height:34px}#homeView .study-search-bar .btn{order:-1}}
+@media(max-width:600px){#homeView .home-stage .json-home{padding:18px!important}#homeView .hero-copy .hero-actions{gap:8px 14px;margin-top:18px}}
+@media(prefers-reduced-motion:reduce){#examView #examProgressDrawer,#examView .exam-progress-backdrop{transition:none!important}}

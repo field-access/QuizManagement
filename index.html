@@ -10,6 +10,7 @@
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js"></script>
 
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="prompt-library.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Libre+Baskerville:wght@400;700&family=Lora:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Merriweather:wght@400;700&family=Nunito+Sans:wght@400;600;700;800&family=Open+Sans:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&family=Source+Serif+4:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -78,23 +79,27 @@
   </section>
   </div>
 
-  <div class="metrics" style="margin-top:18px">
-    <div class="metric card"><small>Tests completed</small><b id="homeTests">0</b></div>
-    <div class="metric card"><small>Questions solved</small><b id="homeQuestions">0</b></div>
-  </div>
-
   <div class="dashcols">
-    <section class="panel card advice-panel" style="grid-column: 1 / -1;"><div class="panel-heading"><div><h3>📝 Study Todo List</h3></div></div>
-      <div id="todoApp" style="margin-top: 10px;">
-        <div style="display:flex;gap:8px;">
-          <input type="text" id="todoInput" placeholder="What needs to be done?" style="flex:1; border:1px solid var(--line); border-radius:8px; padding:10px; font-size:13px;" onkeypress="if(event.key==='Enter') addTodo()">
-          <input type="date" id="todoDeadline" style="border:1px solid var(--line); border-radius:8px; padding:10px; font-size:13px; color:var(--ink);">
-          <button class="btn primary" onclick="addTodo()" style="background:var(--accent); color:#fff; font-weight:600; border:none;">Add</button>
-        </div>
-        <div id="todoListContainer" style="display:flex; flex-direction:column; gap:8px; margin-top:12px;"></div>
+    <section class="panel card advice-panel home-todo-panel">
+      <div class="panel-heading"><div><h3>📝 Study todo list</h3><small>Keep your next study steps in one place.</small></div><span id="todoSummary" class="todo-summary">0 tasks</span></div>
+      <div id="todoApp" class="todo-app">
+        <form class="todo-form" onsubmit="event.preventDefault();addTodo()">
+          <label class="sr-only" for="todoInput">Study task</label>
+          <input type="text" id="todoInput" placeholder="What needs to be done?" maxlength="180" autocomplete="off">
+          <label class="sr-only" for="todoDeadline">Task deadline</label>
+          <input type="date" id="todoDeadline" aria-label="Task deadline">
+          <button class="btn primary" type="submit">Add task</button>
+        </form>
+        <div id="todoListContainer" class="todo-list"></div>
       </div>
     </section>
-    <section class="panel card" style="grid-column: 1 / -1; max-width: 100%;"><h3>Continue studying</h3><div id="homeSessionsList"></div></section>
+    <section class="panel card home-continue-panel">
+      <div class="panel-heading">
+        <div><h3>Continue studying</h3><small>Resume a quiz or explore your study history.</small></div>
+        <div class="study-summary" aria-label="Study totals"><span><strong id="homeTests">0</strong> tests completed</span><span class="study-summary-separator" aria-hidden="true">·</span><span><strong id="homeQuestions">0</strong> questions solved</span></div>
+      </div>
+      <div id="homeSessionsList"></div>
+    </section>
   </div>
 
 <section class="card schema-guide">
@@ -303,6 +308,19 @@
         <div><span class="shortcut-keys"><kbd>H</kbd> · <kbd>Esc</kbd></span><span>Home / close dialog</span></div>
       </div>
     </section>
+    <section id="promptLibrary" class="prompt-settings-card" aria-labelledby="promptLibraryTitle">
+      <div class="prompt-library-head"><div><span class="prompt-eyebrow">PERSONALIZE YOUR WORKFLOW</span><h3 id="promptLibraryTitle">Prompt Lab</h3><p>Edit the prompts used to create CBQs and question breakdowns.</p></div><details class="prompt-file-menu"><summary aria-label="Prompt library options" title="Prompt library options">⋯</summary><div><button class="btn" type="button" onclick="exportPromptLibrary()">Export JSON</button><label class="btn">Import JSON<input type="file" accept=".json,application/json" onchange="importPromptLibrary(event)" hidden></label></div></details></div>
+      <div class="prompt-workspace">
+        <div class="prompt-slot-sidebar" aria-label="Prompt slots"><div id="promptSlotList" class="prompt-slot-list"></div><button class="btn prompt-new-slot" type="button" onclick="addPromptSlot()">+ Experimental slot</button></div>
+        <div class="prompt-edit-pane">
+          <div class="prompt-name-row"><label for="promptSlotName">Name<input id="promptSlotName" class="prompt-library-edit" oninput="editPrompt()" placeholder="Name this prompt"></label><button id="deletePromptBtn" class="btn" type="button" onclick="deletePromptSlot()" title="Delete experimental slot">Delete</button></div>
+          <label class="prompt-editor-label" for="seedPromptEditor">Prompt <span id="promptUsage"></span></label>
+          <textarea id="seedPromptEditor" class="prompt-editor prompt-library-edit" rows="14" spellcheck="false" placeholder="Write your CBQ prompt here…" aria-describedby="seedPromptStatus" oninput="editPrompt()"></textarea>
+          <div id="seedPromptStatus" class="prompt-status" role="status"></div>
+          <div class="prompt-editor-actions"><button class="btn primary prompt-library-edit" type="button" onclick="savePrompt()">Save</button><button class="btn prompt-library-edit" type="button" onclick="copyEditedPrompt()">Copy</button><button id="restorePromptBtn" class="btn" type="button" onclick="restoreOriginalPrompt()">Restore original</button></div>
+        </div>
+      </div>
+    </section>
     <section class="card local-data-panel" aria-labelledby="localDataTitle">
       <div class="local-data-header"><div><h3 id="localDataTitle">💾 Local data</h3><p>Export or restore your ExamFlow data stored in this browser.</p></div>
         <div class="local-data-actions">
@@ -314,6 +332,7 @@
         </div>
       </div>
       <p id="persistentStorageStatus" class="paste-status" role="status">Automatic local backup is enabled.</p>
+      <p id="persistentStorageCapacity" class="library-storage-help" aria-live="polite"></p>
       <div id="dataImportStatus" class="paste-status" role="status">Import an ExamFlow backup exported from this app.</div>
     </section>
   </div>
@@ -344,6 +363,7 @@
 
 <div id="toast" class="toast"></div>
 
+<script src="prompt-lab.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
