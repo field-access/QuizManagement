@@ -663,7 +663,13 @@ function setQuizRichText(element,text){
 }
 function setQuizExplanation(element,text){
  if(!element)return;
- element.innerHTML=`<strong>💡 Explanation</strong><div class="explanation-content quiz-rich-text">${quizMarkdownHtml(formatExplanationText(text))}</div>`;
+ element.setAttribute("role","region");
+ element.setAttribute("aria-labelledby","explanationHeading");
+ element.innerHTML='<div class="explanation-heading"><span aria-hidden="true">💡</span><h3 id="explanationHeading">Explanation</h3></div>';
+ const content=document.createElement("div");
+ content.className="explanation-content";
+ setQuizRichText(content,formatExplanationText(text));
+ element.appendChild(content);
  renderAllQuizMath(element);
 }
 function renderAllQuizMath(root=document){
