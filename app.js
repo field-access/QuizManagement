@@ -1904,8 +1904,9 @@ function addFlashcard(){
 function renderFlashcards(){
  const count=document.getElementById("flashcardCount"),total=document.getElementById("flashcardTotal"),text=document.getElementById("flashcardText"),label=document.querySelector(".flashcard-label"),list=document.getElementById("flashcardList");if(!count)return;
  count.textContent=flashcards.length?`Card ${flashcardIndex+1} of ${flashcards.length}`:"No cards yet";total.textContent=flashcards.length;
- if(flashcards.length){const card=flashcards[flashcardIndex]||flashcards[0];text.textContent=flashcardShowingAnswer?card.answer:card.question;label.textContent=flashcardShowingAnswer?"ANSWER":"QUESTION"}else{text.textContent="Add a card to get started";label.textContent="QUESTION"}
- list.innerHTML=flashcards.map((card,i)=>`<div class="flashcard-row"><button type="button" class="flashcard-row-open" onclick="selectFlashcard(${i})">${escapeHtml(card.question)}</button><button type="button" class="flashcard-delete" aria-label="Delete flashcard" onclick="deleteFlashcard(${i})">×</button></div>`).join("");
+ const cardFace=document.getElementById("flashcardFace");
+ if(flashcards.length){const card=flashcards[flashcardIndex]||flashcards[0];text.textContent=flashcardShowingAnswer?card.answer:card.question;label.textContent=flashcardShowingAnswer?"ANSWER":"QUESTION";cardFace.style.setProperty("--flashcard-hue",String((flashcardIndex*36+12)%360))}else{text.textContent="Add a card to get started";label.textContent="QUESTION";cardFace.style.removeProperty("--flashcard-hue")}
+ list.innerHTML=flashcards.map((card,i)=>`<div class="flashcard-row" style="--flashcard-hue:${(i*36+12)%360}"><button type="button" class="flashcard-row-open" onclick="selectFlashcard(${i})">${escapeHtml(card.question)}</button><button type="button" class="flashcard-delete" aria-label="Delete flashcard" onclick="deleteFlashcard(${i})">×</button></div>`).join("");
 }
 function escapeHtml(value){const d=document.createElement("div");d.textContent=value;return d.innerHTML}
 function selectFlashcard(index){flashcardIndex=index;flashcardShowingAnswer=false;renderFlashcards()}
