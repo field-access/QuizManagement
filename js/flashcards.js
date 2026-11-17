@@ -16,6 +16,7 @@
   const icon = name => '<svg class="ui-icon" aria-hidden="true"><use href="#icon-' + name + '"/></svg>';
   const button = (action, label, extra = '') => '<button class="btn" data-fc="' + action + '" ' + extra + '>' + label + '</button>';
   function notice(message, error = false) { if (!error) { $('fcNotice').hidden = true; toast(message); return; } $('fcNotice').hidden = false; $('fcNotice').textContent = message; $('fcNotice').classList.add('fc-error'); }
+<<<<<<< HEAD
   function migrateLegacy(cards) {
     if (!Array.isArray(cards)) throw new Error('Invalid flashcard backup.');
     if (!cards.length) return { version: 1, decks: [], session: null, activity: [] };
@@ -39,6 +40,11 @@
       state = migrateLegacy(stored);
       QuizStorage.setItem(KEY, JSON.stringify(state));
     } else state = raw ? C.validateStore(stored) : { version: 1, decks: [], session: null, activity: [] };
+=======
+  function read() {
+    const raw = QuizStorage.getItem(KEY);
+    state = raw ? C.validateStore(JSON.parse(raw)) : { version: 1, decks: [], session: null, activity: [] };
+>>>>>>> feature-member1
     readFailed = false;
   }
   function save(next) {
@@ -348,7 +354,11 @@
     if(state.session&&!confirm('Start this review? Your card ratings are saved, but the current flashcard session will end.'))return;
     showView('flashcards');start(deck,'review');
   }
+<<<<<<< HEAD
   window.Flashcards = { refresh, renderLibrary, saveQuestion, studyDue, copyPrompt, handleKey, validateBackup: value => Array.isArray(value) ? migrateLegacy(value) : C.validateStore(value) };
+=======
+  window.Flashcards = { refresh, renderLibrary, saveQuestion, studyDue, copyPrompt, handleKey, validateBackup: C.validateStore };
+>>>>>>> feature-member1
   document.addEventListener('DOMContentLoaded', () => {
     $('flashcardsView').addEventListener('click', handle);
     $('fcJson').addEventListener('input', () => { pending = null; $('fcPreview').hidden = true; $('fcImportStatus').textContent = ''; });

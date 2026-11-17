@@ -41,7 +41,11 @@
         const keys=store.getAllKeys(),values=store.getAll(),initialized=tx.objectStore(META).get('initialized');
         tx.oncomplete=()=>resolve({keys:keys.result,values:values.result,initialized:initialized.result});tx.onerror=()=>reject(tx.error);
       });
+<<<<<<< HEAD
       cache.clear();loaded.keys.forEach((key,i)=>{if(managed(key))cache.set(key,loaded.values[i])});
+=======
+      cache.clear();loaded.keys.forEach((key,i)=>cache.set(key,loaded.values[i]));
+>>>>>>> feature-member1
       if(!loaded.initialized){
         const reset=legacy.get('examflow_last_reset');
         const snapshots=await Promise.all([oldSnapshot('ExamFlowPersistentBackup_v1','backup'),oldSnapshot('examflow_persistent_backup_v1','app_state')]);
@@ -55,6 +59,7 @@
         await transaction([...cache],{migratedAt:new Date().toISOString()});
         // Remove old cache entries only after the migration transaction has committed.
         for(const [key,value] of legacy)try{if(localGet(key)===value)localStorage.removeItem(key)}catch{}
+<<<<<<< HEAD
       }else{
         const legacyFlashcardsAndQueues=[...legacy].filter(([key])=>/^examflow_(?:flashcards|review_queue)(?:_|$)/i.test(key));
         const recovered=legacyFlashcardsAndQueues.filter(([key])=>!cache.has(key));
@@ -66,6 +71,8 @@
           }
         }
         for(const [key,value] of [...recovered,...unchanged])try{if(localGet(key)===value)localStorage.removeItem(key)}catch{}
+=======
+>>>>>>> feature-member1
       }
       mode='indexeddb';db.onversionchange=()=>{db.close();mode='failed';failure('The library changed in another tab. Reload this page before saving.')};
     }catch(error){mode='failed';failure('Could not open or migrate your library. Existing data was retained. Close other tabs and reload; saving is disabled.');}
@@ -111,7 +118,10 @@
     try{
       await flush();await transaction(entries);
       for(const [key,value] of entries){if(value===null)cache.delete(key);else cache.set(key,value)}
+<<<<<<< HEAD
       for(const [key] of entries)try{localStorage.removeItem(key)}catch{}
+=======
+>>>>>>> feature-member1
       lastError='';channel?.postMessage({keys:entries.map(([key])=>key)});announce();
     }finally{exclusive=false;cover.remove()}
   }
@@ -135,10 +145,15 @@
     if(!document.getElementById('settingsView')?.classList.contains('active'))return;
     const el=document.getElementById('libraryStorageStatus');if(!el)return;
     const size=[...cache.values()].reduce((sum,value)=>sum+bytes(value),0),format=n=>n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':Math.ceil(n/1024)+' KB';
+<<<<<<< HEAD
     let quizzes=0,flashcards=0;try{quizzes=JSON.parse(cache.get('examflow_exams_v1')||'[]').length}catch{}
     try{const saved=JSON.parse(cache.get('examflow_flashcards_v1')||'[]');flashcards=Array.isArray(saved)?saved.length:(saved.decks||[]).reduce((total,deck)=>total+(deck.cards?.length||0),0)}catch{}
     const usage=document.getElementById('libraryStorageUsage');
     if(usage)usage.textContent=format(size)+' library · '+quizzes+' quizzes · '+flashcards+' flashcards';
+=======
+    let quizzes=0,cards=0;try{quizzes=JSON.parse(cache.get('examflow_exams_v1')||'[]').length;cards=(JSON.parse(cache.get('examflow_flashcards_v1')||'{}').decks||[]).reduce((n,d)=>n+(d.cards?.length||0),0)}catch{}
+    const usage=document.getElementById('libraryStorageUsage');if(usage)usage.textContent=format(size)+' library · '+quizzes+' quizzes · '+cards+' flashcards';
+>>>>>>> feature-member1
     el.textContent=lastError||(mode==='indexeddb'?(writing||pending.size?'Saving changes…':'Saved in IndexedDB'):mode==='loading'?'Loading library…':'Limited browser storage');
     el.classList.toggle('storage-error',!!lastError);
     try{
