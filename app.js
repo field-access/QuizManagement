@@ -1,4 +1,4 @@
-const K={sessions:"examflow_sessions_v2",results:"examflow_results_v2",goal:"examflow_goal_v2",plans:"examflow_plans_v2",settings:"examflow_settings_v2",exams:"examflow_exams_v1",recent:"examflow_recent_quizzes_v1",promptLibrary:"examflow_prompt_library_v1"};
+const K={sessions:"examflow_sessions_v2",results:"examflow_results_v2",goal:"examflow_goal_v2",plans:"examflow_plans_v2",settings:"examflow_settings_v2",exams:"examflow_exams_v1",recent:"examflow_recent_quizzes_v1",study:"examflow_study_activity_v1",plannerDates:"examflow_planner_dates_v1",todos:"examflow_todos_v1",promptLibrary:"examflow_prompt_library_v1",flashcards:"examflow_flashcards_v1",reviewQueue:"examflow_review_queue_v1"};
 const sampleQuestions=[
 {text:"Which algorithm guarantees shortest paths from a source when edge weights are non-negative?",options:["DFS","Dijkstra's algorithm"],answer:"B",marks:2,negativeMarks:.5},
 {text:"What is the average-case lookup complexity of a good hash table?",options:["$O(1)$","$O(\\log n)$"],answer:"A"},
@@ -10,84 +10,30 @@ let examId=null;
 let timerState={examSeconds:5*60,practiceSeconds:5*60,running:false};
 let matchOrders={};
 let settings=loadSettings();
-restoreFromPersistentStorage().then(()=>{
+QuizStorage.ready.then(()=>{
   try{
     settings=loadSettings();
     renderSessions();
     renderDashboard();
     renderPlans();
     renderHome();
-  }catch(e){}
-}).finally(()=>requestPersistentStorage());
+    renderTodos();
+    renderPlannerCalendar();
+    renderPlannerTodos();
+    applySettings();
+    Flashcards.refresh();
+    PlanReviewQueue.render();
+  }catch(e){toast("Could not initialize saved data: "+e.message)}
+});
 
-function get(k,d){try{return JSON.parse(localStorage.getItem(k)||JSON.stringify(d))}catch(e){return d}}
+function get(k,d){try{const raw=QuizStorage.getItem(k);return raw===null?d:JSON.parse(raw)}catch(e){return d}}
 function put(k,v){
-  try{localStorage.setItem(k,JSON.stringify(v))}catch(e){
-    // localStorage is intentionally kept as the fast cache; large data is backed up below.
-  }
-  schedulePersistentBackup();
+  try{QuizStorage.setItem(k,JSON.stringify(v))}
+  catch(e){toast("Could not save: "+e.message);throw e}
 }
-/* Persistent data backup: IndexedDB is substantially larger than localStorage.
-   localStorage remains the fast synchronous cache, while IndexedDB protects
-   quizzes/results/sessions if the browser evicts or fills the cache. */
-const EXAMFLOW_DB_NAME="ExamFlowPersistentBackup_v1",EXAMFLOW_DB_VERSION=1;
-let examflowBackupTimer=null;
-function openExamFlowDB(){return new Promise((resolve,reject)=>{
-  if(!window.indexedDB)return reject(new Error("IndexedDB unavailable"));
-  const req=indexedDB.open(EXAMFLOW_DB_NAME,EXAMFLOW_DB_VERSION);
-  req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains("backup"))req.result.createObjectStore("backup")};
-  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
-})}
-function schedulePersistentBackup(){
-  clearTimeout(examflowBackupTimer);
-  examflowBackupTimer=setTimeout(savePersistentBackup,250);
-}
+function removeStored(k){QuizStorage.removeItem(k)}
 async function savePersistentBackup(){
-  try{
-    const db=await openExamFlowDB();
-    const data={};
-    Object.values(K).forEach(k=>{try{const v=localStorage.getItem(k);if(v!==null)data[k]=JSON.parse(v)}catch(e){}});
-    data.examDeadline=localStorage.getItem("examflow_exam_deadline")||null;
-    await new Promise((resolve,reject)=>{
-      const tx=db.transaction("backup","readwrite");tx.objectStore("backup").put({data,savedAt:new Date().toISOString()},"latest");
-      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
-    });
-    db.close();
-    return true;
-  }catch(e){}
-  return false;
-}
-async function restorePersistentBackup(){
-  try{
-    const db=await openExamFlowDB();
-    const record=await new Promise((resolve,reject)=>{
-      const tx=db.transaction("backup","readonly"),req=tx.objectStore("backup").get("latest");
-      req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
-    });
-    db.close();
-    if(!record?.data)return false;
-    let restored=false;
-    Object.entries(record.data).forEach(([k,v])=>{
-      if(Object.values(K).includes(k)){
-        if(localStorage.getItem(k)===null){try{localStorage.setItem(k,JSON.stringify(v));restored=true}catch(e){}}
-      }
-    });
-    if(record.data.examDeadline && !localStorage.getItem("examflow_exam_deadline")){
-      try{localStorage.setItem("examflow_exam_deadline",record.data.examDeadline);restored=true}catch(e){}
-    }
-    if(restored){
-      try{renderSessions();renderDashboard();renderPlans();renderHome();renderTodos();}catch(e){}
-    }
-    return restored;
-  }catch(e){return false}
-}
-async function enablePersistentStorage(){
-  try{if(navigator.storage?.persist)await navigator.storage.persist()}catch(e){}
-}
-function initPersistentBackup(){
-  enablePersistentStorage();
-  restorePersistentBackup();
-  setTimeout(savePersistentBackup,500);
+  try{await QuizStorage.flush();return true}catch(e){return false}
 }
 function id(){return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8)}
 
@@ -161,6 +107,8 @@ function addTodo() {
   input.value = "";
   if(deadlineInput) deadlineInput.value = "";
   renderTodos();
+  renderPlannerTodos();
+  renderStudySuggestions();
 }
 
 function toggleTodo(i) {
@@ -169,6 +117,8 @@ function toggleTodo(i) {
     todos[i].done = !todos[i].done;
     put("examflow_todos_v1", todos);
     renderTodos();
+    renderPlannerTodos();
+    renderStudySuggestions();
   }
 }
 
@@ -178,124 +128,106 @@ function deleteTodo(i) {
     todos.splice(i, 1);
     put("examflow_todos_v1", todos);
     renderTodos();
+    renderPlannerTodos();
+    renderStudySuggestions();
   }
 }
 
+let plannerCalendarMonth=new Date(new Date().getFullYear(),new Date().getMonth(),1);
+let plannerSelectedDate="";
+function plannerDateKey(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`}
+function getPlannerDates(){
+  const dates=get(K.plannerDates,{});
+  return dates&&typeof dates==="object"&&!Array.isArray(dates)?dates:{};
+}
+function selectPlannerDate(value){
+  if(!value)return;
+  const editor=document.getElementById("plannerDateEditor");
+  if(editor)editor.open=true;
+  plannerSelectedDate=value;
+  const date=new Date(`${value}T00:00:00`);
+  plannerCalendarMonth=new Date(date.getFullYear(),date.getMonth(),1);
+  const input=document.getElementById("plannerDateInput");if(input)input.value=value;
+  const label=document.getElementById("plannerDateLabel");if(label)label.value=getPlannerDates()[value]?.label||"";
+  renderPlannerCalendar();
+}
+function renderPlannerCalendar(){
+  const root=document.getElementById("plannerCalendar");if(!root)return;
+  if(Number.isNaN(plannerCalendarMonth.getTime()))plannerCalendarMonth=new Date(new Date().getFullYear(),new Date().getMonth(),1);
+  const year=plannerCalendarMonth.getFullYear(),month=plannerCalendarMonth.getMonth();
+  const title=document.getElementById("plannerCalendarTitle");
+  if(title)title.textContent=plannerCalendarMonth.toLocaleDateString(undefined,{month:"long",year:"numeric"});
+  const dates=getPlannerDates(),first=new Date(year,month,1),days=new Date(year,month+1,0).getDate();
+  const html=["<div class='calendar-weekdays'><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class='calendar-days'>"];
+  const offset=(first.getDay()+6)%7;
+  for(let i=0;i<offset;i++)html.push("<span class='calendar-day is-empty'></span>");
+  const today=plannerDateKey(new Date()),exam=getSavedExamDeadline();
+  for(let day=1;day<=days;day++){
+    const value=plannerDateKey(new Date(year,month,day)),item=dates[value],classes=["calendar-day"];
+    if(value===today)classes.push("today");
+    if(value===plannerSelectedDate)classes.push("selected");
+    if(value===exam)classes.push("exam");
+    if(item?.type==="important")classes.push("important");
+    html.push(`<button type="button" class="${classes.join(" ")}" onclick="selectPlannerDate('${value}')" aria-label="${esc(new Date(year,month,day).toLocaleDateString(undefined,{dateStyle:"full"}))}${item?.label?`: ${esc(item.label)}`:""}" title="${esc(item?.label||"Select date")}"><span>${day}</span>${item||value===exam?"<i></i>":""}</button>`);
+  }
+  html.push("</div>");
+  root.innerHTML=html.join("");
+  if(!plannerSelectedDate){const input=document.getElementById("plannerDateInput");if(input)input.value=""}
+}
+function shiftPlannerCalendar(delta){
+  plannerCalendarMonth=new Date(plannerCalendarMonth.getFullYear(),plannerCalendarMonth.getMonth()+delta,1);
+  renderPlannerCalendar();
+}
+function savePlannerDate(type){
+  const value=document.getElementById("plannerDateInput")?.value||plannerSelectedDate;
+  if(!value){toast("Select a calendar date first");return}
+  const label=document.getElementById("plannerDateLabel")?.value.trim()||(type==="exam"?"Final exam":"Important study date");
+  if(type==="exam")put("examflow_exam_deadline",value);
+  else{const dates=getPlannerDates();dates[value]={type:"important",label};put(K.plannerDates,dates)}
+  plannerSelectedDate=value;renderPlannerCalendar();renderExamDeadline();renderStudySuggestions();toast(type==="exam"?"Exam date saved ✓":"Important date saved ✓");
+}
+function removePlannerDate(){
+  const value=document.getElementById("plannerDateInput")?.value||plannerSelectedDate;
+  if(!value)return;
+  const dates=getPlannerDates();delete dates[value];put(K.plannerDates,dates);
+  if(getSavedExamDeadline()===value)removeStored("examflow_exam_deadline");
+  renderPlannerCalendar();renderExamDeadline();renderStudySuggestions();toast("Calendar date removed");
+}
+function renderPlannerTodos(){
+  const container=document.getElementById("plannerTodoList");if(!container)return;
+  const todos=get(K.todos,[]);
+  container.innerHTML=todos.length?todos.map((todo,index)=>`<div class="planner-todo-row${todo.done?" done":""}"><label><input type="checkbox" ${todo.done?"checked":""} onchange="toggleTodo(${index});renderPlannerTodos()"><span>${esc(todo.text)}</span></label>${todo.deadline?`<small>${esc(todo.deadline)}</small>`:""}<button type="button" onclick="deleteTodo(${index});renderPlannerTodos()" aria-label="Delete ${esc(todo.text)}">×</button></div>`).join(""):"<div class='empty'>No study tasks yet.</div>";
+}
+function addPlannerTodo(){
+  const input=document.getElementById("plannerTodoInput"),deadline=document.getElementById("plannerTodoDeadline");
+  if(!input?.value.trim())return;
+  const todos=get(K.todos,[]);todos.push({text:input.value.trim(),deadline:deadline?.value||"",done:false});put(K.todos,todos);
+  input.value="";if(deadline)deadline.value="";renderPlannerTodos();renderTodos();renderStudySuggestions();
+}
+function openPlanComposer(){
+  const dialog=document.getElementById("planComposer");if(!dialog)return;
+  document.getElementById("planJsonStatus").textContent=window.KeyboardShortcuts?.mac?"Cmd+Enter to save":"Ctrl+Enter to save";
+  const date=document.getElementById("planDate");
+  if(date&&!date.value){const suggested=new Date();suggested.setDate(suggested.getDate()+7);date.value=plannerDateKey(suggested)}
+  if(!dialog.open)dialog.showModal();
+  document.getElementById("planName")?.focus();
+}
+function closePlanComposer(){document.getElementById("planComposer")?.close()}
+function clearPlanComposer(){["planName","planDate","planTime","planNotes","planJson"].forEach(key=>{const el=document.getElementById(key);if(el)el.value=""})}
+
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
 
-/* EXAMFLOW_PERSISTENT_BACKUP_START */
-const EXAMFLOW_BACKUP_DB="examflow_persistent_backup_v1";
-const EXAMFLOW_BACKUP_STORE="app_state";
-
-function backupPayload(){
-  const data={};
-  Object.values(K).forEach(key=>{
-    try{
-      const raw=localStorage.getItem(key);
-      if(raw!==null)data[key]=JSON.parse(raw);
-    }catch(e){}
-  });
-  try{
-    const deadline=localStorage.getItem("examflow_exam_deadline");
-    if(deadline!==null)data.examflow_exam_deadline=deadline;
-  }catch(e){}
-  return data;
-}
-
-function openBackupDB(){
-  return new Promise((resolve,reject)=>{
-    if(!window.indexedDB)return reject(new Error("IndexedDB unavailable"));
-    const req=indexedDB.open(EXAMFLOW_BACKUP_DB,1);
-    req.onupgradeneeded=()=>{
-      if(!req.result.objectStoreNames.contains(EXAMFLOW_BACKUP_STORE)){
-        req.result.createObjectStore(EXAMFLOW_BACKUP_STORE);
-      }
-    };
-    req.onsuccess=()=>resolve(req.result);
-    req.onerror=()=>reject(req.error);
-  });
-}
-
-async function backupToPersistentStorage(){
-  try{
-    const db=await openBackupDB();
-    await new Promise((resolve,reject)=>{
-      const tx=db.transaction(EXAMFLOW_BACKUP_STORE,"readwrite");
-      tx.objectStore(EXAMFLOW_BACKUP_STORE).put({
-        savedAt:new Date().toISOString(),
-        data:backupPayload()
-      },"latest");
-      tx.oncomplete=resolve;
-      tx.onerror=()=>reject(tx.error);
-    });
-    db.close();
-  }catch(e){}
-}
-
-async function restoreFromPersistentStorage(){
-  try{
-    const db=await openBackupDB();
-    const snapshot=await new Promise((resolve,reject)=>{
-      const tx=db.transaction(EXAMFLOW_BACKUP_STORE,"readonly");
-      const req=tx.objectStore(EXAMFLOW_BACKUP_STORE).get("latest");
-      req.onsuccess=()=>resolve(req.result);
-      req.onerror=()=>reject(req.error);
-    });
-    db.close();
-    if(!snapshot || !snapshot.data)return;
-
-    // Only restore missing keys; never overwrite newer localStorage data.
-    Object.entries(snapshot.data).forEach(([key,value])=>{
-      if(localStorage.getItem(key)===null){
-        try{
-          localStorage.setItem(key,typeof value==="string"?value:JSON.stringify(value));
-        }catch(e){}
-      }
-    });
-
-    try{
-      if(localStorage.getItem("examflow_exam_deadline")===null &&
-         snapshot.data.examflow_exam_deadline!==undefined){
-        localStorage.setItem("examflow_exam_deadline",snapshot.data.examflow_exam_deadline);
-      }
-    }catch(e){}
-  }catch(e){}
-}
-
-async function requestPersistentStorage(){
-  try{
-    if(navigator.storage && navigator.storage.persist)return await navigator.storage.persist();
-  }catch(e){}
-  return false;
-}
 async function protectBrowserStorage(){
- const status=document.getElementById("persistentStorageStatus");
- if(!navigator.storage?.persist){if(status)status.textContent="This browser does not support persistent storage protection.";return}
- const protectedStorage=await requestPersistentStorage();
- if(status)status.textContent=protectedStorage?"Browser storage is protected from automatic cleanup.":"Protection was not granted; export a JSON backup regularly.";
- updatePersistentStorageInfo();
+ await QuizStorage.requestPersistence();
+ await QuizStorage.updatePanel();
 }
 async function retryPersistentBackup(){
- const status=document.getElementById("persistentStorageStatus");
- const saved=await savePersistentBackup();
- if(status)status.textContent=saved?"Local backup saved successfully.":"Could not save the local backup. Export a JSON backup to keep a copy.";
- updatePersistentStorageInfo();
+ QuizStorage.retry();
+ await QuizStorage.updatePanel();
 }
 async function updatePersistentStorageInfo(){
- const capacity=document.getElementById("persistentStorageCapacity");
- if(!capacity)return;
- const storage=navigator.storage;
- if(!storage?.estimate){capacity.textContent="Storage usage details are unavailable in this browser.";return}
- try{
-  const [estimate,persistent]=await Promise.all([storage.estimate(),storage.persisted?.()]);
-  const format=bytes=>bytes>=1073741824?`${(bytes/1073741824).toFixed(1)} GB`:bytes>=1048576?`${(bytes/1048576).toFixed(1)} MB`:`${Math.ceil(bytes/1024)} KB`;
-  capacity.textContent=estimate.quota?`${format(estimate.usage||0)} used of ${format(estimate.quota)} browser allowance · ${persistent?"Persistence granted":"Best-effort storage"}`:"Browser storage capacity is not reported.";
- }catch(error){
-  capacity.textContent="Could not read browser storage usage.";
-  console.warn("Could not read browser storage information:",error);
- }
+ return QuizStorage.updatePanel();
 }
-/* EXAMFLOW_PERSISTENT_BACKUP_END */
 
 function loadSettings(){
  const s=Object.assign({theme:"light",defaultMode:"exam",fontFamily:"DM Sans",questionTextSize:"standard",colorScheme:"classic",soundEnabled:true,examCardWidth:"balanced",instantFeedback:false,defaultDuration:5,defaultMarks:1,defaultNegative:0},get(K.settings,{}));
@@ -890,7 +822,9 @@ function examflowSelectOptionByNumber(n){
   choose(String.fromCharCode(64+n));
 }
 function examflowKeyboardHandler(e){
-  const key=e.key, lower=key.toLowerCase(), typing=isTypingTarget(e.target);
+  const key=e.key, shortcutKey=window.KeyboardShortcuts?.optionKey(e)||key, lower=shortcutKey.toLowerCase(), typing=isTypingTarget(e.target);
+  if(window.CBQReviewPreview?.handleKey(e))return;
+  if(window.Flashcards?.handleKey(e))return;
 
   if(e.key==="Escape"){
     if(typeof closeImporter==="function")closeImporter();
@@ -911,6 +845,12 @@ function examflowKeyboardHandler(e){
     return;
   }
 
+  if((e.ctrlKey||e.metaKey)&&e.key==="Enter"&&document.getElementById("planComposer")?.open){
+    e.preventDefault();
+    savePlan();
+    return;
+  }
+
   // Ctrl/Cmd+Enter is the single intentional exception to the browser guard.
   if((e.ctrlKey||e.metaKey)&&e.key==="Enter" && (document.getElementById("importer")?.classList.contains("show") || document.getElementById("homeView")?.classList.contains("active"))){
     e.preventDefault();
@@ -925,15 +865,22 @@ function examflowKeyboardHandler(e){
   if(typing)return;
 
   // Alt+number navigation stays separate from quiz answer keys and browser tabs.
-  if(e.altKey && !e.shiftKey && /^[1-3]$/.test(e.key)){
+  if(e.altKey && !e.shiftKey && /^[1-3]$/.test(shortcutKey)){
     e.preventDefault();
-    const page=["home","exam","settings"][Number(e.key)-1];
+    const page=["home","exam","planner"][Number(shortcutKey)-1];
     if(page)showView(page);
     return;
   }
+  if(e.altKey && !e.shiftKey && shortcutKey==="4"){e.preventDefault();showView("settings");return}
+  if(e.altKey && !e.shiftKey && shortcutKey==="5"){e.preventDefault();showView("flashcards");return}
   if(e.altKey && lower==="m"){e.preventDefault();toggleMobileNav();return}
   if(e.altKey && lower==="i"){e.preventDefault();openImporter();return}
   if(e.altKey && lower==="x"){e.preventDefault();exportData();return}
+  if(e.altKey && lower==="f"){
+    e.preventDefault();showView("home");
+    setTimeout(()=>document.getElementById("studyQuizSearch")?.focus({preventScroll:true}),0);
+    return;
+  }
   if(e.altKey && lower==="s"){
     if(document.getElementById("examView")?.classList.contains("active")){e.preventDefault();saveSession();toast("Session saved ✓")}
     return;
@@ -943,6 +890,20 @@ function examflowKeyboardHandler(e){
   if(e.shiftKey && !e.altKey && lower==="d"){e.preventDefault();setTheme("dark");return}
 
   const examActive=document.getElementById("examView")?.classList.contains("active");
+  if(!typing&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&lower==="f"&&examActive){
+    e.preventDefault();
+    if(mode!=="practice"||!checkedQuestions.has(current))toast("Reveal or verify the answer in Practice before saving a flashcard.");
+    else if(questions[current])Flashcards.saveQuestion(questions[current],examName);
+    return;
+  }
+  if(!typing&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&lower==="f"&&document.getElementById("testResultsView")?.classList.contains("active")){
+    e.preventDefault();
+    const row=e.target.closest?.(".result-question")||document.querySelector("#resultQuestions .result-question.keyboard-current")||document.querySelector("#resultQuestions .result-question.open");
+    const index=Number(row?.dataset.questionIndex);
+    if(row&&Number.isInteger(index)&&lastResultSnapshot?.questions[index])Flashcards.saveQuestion(lastResultSnapshot.questions[index],lastResultSnapshot.name);
+    else toast("Open a result question or select it with the arrow keys, then press F.");
+    return;
+  }
 
 
 
@@ -1191,7 +1152,7 @@ function showPracticeAnswerPanel(q){
    document.getElementById("explanation").before(panel);
  }
  panel.dataset.question=String(current);
- panel.innerHTML=`<div class="answer-label">Correct answer</div><div class="answer-value quiz-rich-text">${practiceCorrectAnswerHTML(q)}</div>`;
+ panel.innerHTML=`<div class="answer-label">Correct answer <button type="button" class="btn save-flashcard" title="Save this question as a flashcard (F)" onclick="event.stopPropagation();Flashcards.saveQuestion(questions[current],examName)">Save flashcard <kbd>F</kbd></button></div><div class="answer-value quiz-rich-text">${practiceCorrectAnswerHTML(q)}</div>`;
  panel.style.display="block";renderAllQuizMath(panel);
 }
 function deleteCurrentQuestion(){
@@ -1202,6 +1163,7 @@ function deleteCurrentQuestion(){
  clearTimeout(saveTimer);
  const remap=set=>new Set([...set].filter(value=>value!==index).map(value=>value>index?value-1:value));
  const previousExamId=examId;
+ if(sessionId)PlanReviewQueue.removeQuestion(sessionId,index);
  questions.splice(index,1);answers.splice(index,1);
  reviews=remap(reviews);checkedQuestions=remap(checkedQuestions);
  matchOrders=Object.fromEntries(Object.entries(matchOrders).filter(([key])=>Number(key)!==index).map(([key,value])=>[Number(key)>index?Number(key)-1:Number(key),value]));
@@ -1248,7 +1210,7 @@ function closeSubmit(){document.getElementById("submitModal").classList.remove("
 function finishTest(automatic=false){
  if(examFinished)return;
  examFinished=true;timerState.running=false;closeSubmit();render();
- const r=saveResult();saveSession();showView("home");toast(automatic?"Time is up. Exam submitted.":`Result saved · ${r.percent}% ✓`)
+ const r=saveResult();saveSession();openDetailedResults(r);toast(automatic?"Time is up. Exam submitted.":`Result saved · ${r.percent}% ✓`)
 }
 
 function saveSession(){
@@ -1256,7 +1218,8 @@ function saveSession(){
  const sessions=get(K.sessions,[]),now=new Date().toISOString(),sid=sessionId||id();sessionId=sid;
  const item={id:sid,examId:examId||sid,name:examName,questions,answers,reviews:[...reviews],checkedQuestions:[...checkedQuestions],matchOrders,current,seconds,quizDurationMinutes,mode,sections,examFinished,examTimerSeconds:timerState.examSeconds,practiceTimerSeconds:timerState.practiceSeconds,practiceTimerRunning:timerState.running,updatedAt:now};
  const old=sessions.find(x=>x.id===sid);if(old)Object.assign(old,item);else sessions.unshift(item);
- put(K.sessions,sessions);renderSessions()
+ put(K.sessions,sessions);recordStudyActivity(item);renderSessions()
+ PlanReviewQueue.render();
 }
 let saveTimer;function saveSessionSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(saveSession,120)}
 function renderSessions(){
@@ -1268,7 +1231,15 @@ function restoreSession(sid){
  sessionId=s.id;examId=s.examId||s.id;examName=s.name;questions=s.questions;answers=s.answers||Array(questions.length).fill(null);reviews=new Set(s.reviews||[]);checkedQuestions=new Set(s.checkedQuestions||[]);matchOrders=s.matchOrders||{};current=Math.min(s.current||0,questions.length-1);seconds=s.seconds===0?0:Math.min(10*60,Math.max(1,s.seconds||5*60));quizDurationMinutes=Math.min(10,Math.max(1,s.quizDurationMinutes||Math.ceil(Math.max(seconds,1)/60)));timerState.examSeconds=Number.isFinite(s.examTimerSeconds)?s.examTimerSeconds:seconds;timerState.practiceSeconds=s.practiceTimerSeconds||5*60;timerState.running=!!s.practiceTimerRunning;examFinished=!!s.examFinished;mode=s.mode||settings.defaultMode;sections=s.sections||[];registerActiveExam();
  if(document.getElementById("examTitle"))document.getElementById("examTitle").textContent=examName;document.getElementById("headerQuizName").textContent=examName;showView("exam");render();toast("Session restored ✓")
 }
-function deleteSession(sid){put(K.sessions,get(K.sessions,[]).filter(x=>x.id!==sid));renderSessions();renderDashboard();renderHome();}
+function deleteSession(sid){
+ put(K.sessions,get(K.sessions,[]).filter(x=>x.id!==sid));
+ put(K.study,get(K.study,[]).filter(item=>item.sessionId!==sid));
+ const receipts=get(K.reviewQueue,{});
+ delete receipts["session:"+sid];
+ put(K.reviewQueue,receipts);
+ renderSessions();renderDashboard();renderHome();
+ PlanReviewQueue.render();
+}
 function savedQuizGroup(kind,sourceId){
  const key={session:K.sessions,result:K.results,quiz:K.exams}[kind];
  const source=key&&get(key,[]).find(item=>item.id===sourceId);
@@ -1314,7 +1285,7 @@ function renameSavedQuiz(kind,sourceId){
 }
 function deleteSavedQuiz(kind,sourceId){
  const group=savedQuizGroup(kind,sourceId);if(!group){toast("This saved quiz is no longer available.");return}
- if(!confirm(`Delete "${group.source.name||"Untitled quiz"}"?\n\nThis removes its saved quiz, sessions, results and recent-history entry.`))return;
+ if(!confirm(`Delete "${group.source.name||"Untitled quiz"}"?\n\nThis removes its saved quiz, sessions, results, recent history and study activity.`))return;
  const {quizId,sessionIds,resultIds}=group;
  if(examId===quizId||sessionIds.has(sessionId)){
   clearTimeout(saveTimer);timerState.running=false;timerState.examSeconds=0;
@@ -1326,8 +1297,13 @@ function deleteSavedQuiz(kind,sourceId){
  }
  put(K.sessions,get(K.sessions,[]).filter(item=>!sessionIds.has(item.id)));
  put(K.results,get(K.results,[]).filter(item=>!resultIds.has(item.id)));
+ put(K.study,get(K.study,[]).filter(item=>item.examId!==quizId&&!sessionIds.has(item.sessionId)&&!resultIds.has(item.resultId)));
+ const receipts=get(K.reviewQueue,{});
+ for(const sid of sessionIds)delete receipts["session:"+sid];
+ for(const rid of resultIds)delete receipts["result:"+rid];
+ put(K.reviewQueue,receipts);
  for(const key of [K.exams,K.recent])put(key,get(key,[]).filter(item=>item.id!==quizId));
- renderSessions();renderDashboard();renderHome();
+ renderSessions();renderDashboard();renderHome();PlanReviewQueue.render();
  if(!questions.length)showView("home");
  toast("Saved quiz deleted");
 }
@@ -1467,6 +1443,8 @@ function openDetailedResults(result){
  document.getElementById("resultTime").textContent=`◷ Time taken: ${result.timeTaken||0}s`;
  renderResultSections(result);
  renderResultQuestions();
+ const reviewActions=document.getElementById("resultFlashcardReview");
+ if(reviewActions)reviewActions.innerHTML=CBQReviewPreview.controls(result,"result");
  const advice=result.percent>=80
    ?"Your fundamentals are working well. Focus on speed, edge cases and maintaining consistency."
    :result.percent>=60
@@ -1574,7 +1552,7 @@ function renderResultQuestions(){
    const status=!answerIsPresent(q.selected,q)?"skip":isQuestionCorrect(q,q.selected)?"correct":"wrong";
    const selected=resultValueText(q,q.selected);
    const correct=correctValueText(q);
-   return `<div class="result-question ${status}" onclick="this.classList.toggle('open')">
+   return `<div class="result-question ${status}" data-question-index="${q.index}" onclick="this.classList.toggle('open')">
      <div class="result-qno">${q.index+1}</div>
      <div>
        <div class="result-qmeta">SECTION ${esc(q.section||"GENERAL")} <span style="margin-left:5px">· ${status==="correct"?"✓ Correct +"+q.marks:status==="wrong"?"× Wrong":"Skipped"}</span></div>
@@ -1586,6 +1564,7 @@ function renderResultQuestions(){
          <strong>Options / Items</strong>
          <div style="margin-top:5px">${optionsHtml(q)}</div>
          ${q.explanation?`<div class="result-explanation"><strong>💡 Explanation</strong><br>${esc(q.explanation)}</div>`:""}
+         <button class="btn save-flashcard" title="Save this question as a flashcard (F)" onclick="event.stopPropagation();Flashcards.saveQuestion(lastResultSnapshot.questions[${q.index}],lastResultSnapshot.name)">Save flashcard <kbd>F</kbd></button>
        </div>
      </div>
      <div class="result-status-icon">${status==="correct"?"✓":status==="wrong"?"×":"−"}</div>
@@ -1627,7 +1606,7 @@ function saveResult(){
  };
  if(!examId)registerActiveExam();
  r.examId=examId;
- const rs=get(K.results,[]);rs.unshift(r);put(K.results,rs);backupToPersistentStorage();return r
+ const rs=get(K.results,[]);rs.unshift(r); put(K.results,rs);recordStudyActivity(null,r);PlanReviewQueue.render();return r
 }
 function renderStackedRows(items,renderRow,emptyMessage){
  const list=Array.isArray(items)?items:[];
@@ -1661,13 +1640,18 @@ function renderDashboard(){
  const latest=rs[0],ad=document.getElementById("advice");
  if(!latest)ad.innerHTML='<div class="empty">Complete a test to unlock performance advice.</div>';
  else ad.innerHTML=`<strong>Latest: ${latest.percent}%</strong><p style="color:var(--muted);font-size:12px;line-height:1.6">${latest.percent>=80?"Strong performance. Push consistency with timed Exam Mode.":latest.percent>=60?"Good foundation. Use Practice Mode on weak topics, then retest.":"Focus on concept breakdown first, then repeat the same quiz after revision."}</p>`;
-
+ renderGoal();
 }
 function deleteResult(id) {
   const rs = get(K.results, []);
   put(K.results, rs.filter(r => r.id !== id));
+  put(K.study,get(K.study,[]).filter(item=>item.resultId!==id));
+  const receipts=get(K.reviewQueue,{});
+  delete receipts["result:"+id];
+  put(K.reviewQueue,receipts);
   renderDashboard();
   renderHome();
+  PlanReviewQueue.render();
   toast("Result deleted ✓");
 }
 function setGoalPreset(target){
@@ -1689,7 +1673,7 @@ function renderGoal(){
  document.getElementById("goalBar").style.width=(g.text?progress:0)+"%";
  document.querySelectorAll(".milestone").forEach(x=>x.classList.toggle("active",Number(x.textContent.match(/\d+/)?.[0])===target));
 }
-function clearResults(){if(confirm("Delete all saved results?")){localStorage.removeItem(K.results);renderDashboard();toast("Results cleared")}}
+function clearResults(){if(confirm("Delete all saved results?")){removeStored(K.results);put(K.study,get(K.study,[]).filter(item=>item.kind!=="result"));const receipts=get(K.reviewQueue,{});for(const key of Object.keys(receipts))if(key.startsWith("result:"))delete receipts[key];put(K.reviewQueue,receipts);renderDashboard();renderHome();PlanReviewQueue.render();toast("Results cleared")}}
 
 
 function planDateFromSource(source){
@@ -1719,7 +1703,7 @@ function saveQuickPlan(){
     put(K.plans,ps);
     box.value="";
     if(status){status.textContent=`✓ Planned: ${name} · ${date}`;status.style.color="var(--good)"}
-    renderPlans();renderHome();toast("Test planned ✓");
+    renderPlans();renderHome();renderStudySuggestions();toast("Test planned ✓");
   }catch(e){
     if(status){status.textContent="✕ "+e.message+" Common paste formatting is supported."; status.style.color="var(--bad)"}
     toast("Invalid quiz JSON");
@@ -1738,13 +1722,13 @@ function savePlan(){
    }catch(e){toast("Invalid quiz JSON: "+e.message);return}
  }
  const ps=get(K.plans,[]);ps.push({id:id(),name,date,time,notes,json,createdAt:new Date().toISOString()});ps.sort(planSortNewestFirst);put(K.plans,ps);
- ["planName","planDate","planTime","planNotes","planJson"].forEach(x=>document.getElementById(x).value="");renderPlans();toast("Future test saved ✓")
+ clearPlanComposer();closePlanComposer();renderPlans();renderPlannerCalendar();renderStudySuggestions();toast("Future test saved ✓")
 }
 function renderPlans(){
  const el=document.getElementById("plansList");if(!el)return;
  const ps=get(K.plans,[]).slice().sort(planSortNewestFirst);
  const pc=document.getElementById("plannerCount");if(pc)pc.textContent=String(ps.length);
- el.innerHTML=renderStackedRows(ps,p=>`<div class="planrow"><div class="planmain"><strong>${esc(p.name)}</strong><small>${p.date}${p.time?" · "+p.time:""}${p.notes?" · "+esc(p.notes):""}</small></div><div style="display:flex;gap:5px"><button class="btn primary" onclick="startPlan('${p.id}')">▶ Start</button><button class="btn" onclick="deletePlan('${p.id}')">×</button></div></div>`,`No upcoming tests.`);
+ el.innerHTML=renderStackedRows(ps,p=>`<div class="planrow"><div class="planmain"><strong>${esc(p.name)}</strong><small>${esc(p.date)}${p.time?" · "+esc(p.time):""}${p.notes?" · "+esc(p.notes):""}</small></div><div style="display:flex;gap:5px">${p.json?`<button class="btn primary" onclick="startPlan('${p.id}')">▶ Start</button>`:'<span class="plan-no-quiz">Quiz not attached</span>'}<button class="btn" aria-label="Delete ${esc(p.name)}" onclick="deletePlan('${p.id}')">×</button></div></div>`,`No upcoming tests.`);
 }
 function startPlan(pid){
  const p=get(K.plans,[]).find(x=>x.id===pid);if(!p)return;if(!p.json){toast("No quiz JSON attached to this plan");return}
@@ -1752,7 +1736,7 @@ function startPlan(pid){
  registerActiveExam({source:"planned",plannedDate:p.date,plannedTime:p.time,name:p.name});
  if(document.getElementById("examTitle"))document.getElementById("examTitle").textContent=examName;document.getElementById("headerQuizName").textContent=examName;showView("exam");render();setTimeout(applyQuestionSidebarState,50);saveSession();toast("Planned test loaded ✓")
 }
-function deletePlan(pid){put(K.plans,get(K.plans,[]).filter(x=>x.id!==pid));renderPlans()}
+function deletePlan(pid){put(K.plans,get(K.plans,[]).filter(x=>x.id!==pid));renderPlans();renderStudySuggestions()}
 async function importDataFile(event){
   const file=event.target.files?.[0];
   const status=document.getElementById("dataImportStatus");
@@ -1761,38 +1745,55 @@ async function importDataFile(event){
     const raw=await file.text();
     const parsed=JSON.parse(raw);
 
-    // Accept only an ExamFlow backup structure. Quiz JSON belongs in
-    // "Add CBQ Quiz" and is intentionally not mixed with application backup.
-    const allowed=["settings","results","goal","plans","sessions","exams","recent","promptLibrary"];
+    if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("The backup must be a JSON object.");
+    const allowed=["settings","results","goal","plans","sessions","exams","recent","study","plannerDates","todos","promptLibrary","examDeadline","flashcards","reviewQueue"];
     const hasBackup=allowed.some(k=>Object.prototype.hasOwnProperty.call(parsed,k));
     if(!hasBackup)throw new Error("This is a quiz JSON, not an ExamFlow data backup. Use Add CBQ Quiz.");
 
     const overwrite=confirm(
       "Import this ExamFlow backup?\\n\\n" +
-      "This will replace your current settings, results, goals, plans, saved sessions, quiz history and prompt slots with the backup."
+      "This will replace the supported data collections included in the backup."
     );
     if(!overwrite){
       event.target.value="";
       return;
     }
 
-    if(parsed.settings!==undefined)put(K.settings,parsed.settings);
-    if(parsed.results!==undefined)put(K.results,Array.isArray(parsed.results)?parsed.results:[]);
-    if(parsed.goal!==undefined)put(K.goal,parsed.goal||{});
-    if(parsed.plans!==undefined)put(K.plans,Array.isArray(parsed.plans)?parsed.plans:[]);
-    if(parsed.sessions!==undefined)put(K.sessions,Array.isArray(parsed.sessions)?parsed.sessions:[]);
-    if(parsed.exams!==undefined)put(K.exams,Array.isArray(parsed.exams)?parsed.exams:[]);
-    if(parsed.recent!==undefined)put(K.recent,Array.isArray(parsed.recent)?parsed.recent:[]);
-    if(parsed.promptLibrary!==undefined)put(K.promptLibrary,parsed.promptLibrary||{});
-    if(parsed.examDeadline!==undefined){
-      if(parsed.examDeadline)localStorage.setItem("examflow_exam_deadline",String(parsed.examDeadline));
-      else localStorage.removeItem("examflow_exam_deadline");
+    const entries=[];
+    const add=(field,key,value)=>{
+      if(!Object.prototype.hasOwnProperty.call(parsed,field))return;
+      entries.push([key,JSON.stringify(value)]);
+    };
+    const addArray=(field,key)=>{if(Object.prototype.hasOwnProperty.call(parsed,field)){if(!Array.isArray(parsed[field]))throw new Error(`${field} must be an array.`);add(field,key,parsed[field])}};
+    const addObject=(field,key,allowNull=false)=>{if(Object.prototype.hasOwnProperty.call(parsed,field)){if(parsed[field]===null&&allowNull){add(field,key,{});return}if(!parsed[field]||typeof parsed[field]!=="object"||Array.isArray(parsed[field]))throw new Error(`${field} must be an object.`);add(field,key,parsed[field])}};
+    addObject("settings",K.settings);addArray("results",K.results);addObject("goal",K.goal,true);
+    addArray("plans",K.plans);addArray("sessions",K.sessions);addArray("exams",K.exams);
+    addArray("recent",K.recent);
+    if(Object.prototype.hasOwnProperty.call(parsed,"flashcards")){
+      add("flashcards",K.flashcards,Flashcards.validateBackup(parsed.flashcards));
     }
+    if(Object.prototype.hasOwnProperty.call(parsed,"reviewQueue")){
+      PlanReviewQueue.validateReceipts(parsed.reviewQueue);
+      addObject("reviewQueue",K.reviewQueue);
+    }
+    if(Object.prototype.hasOwnProperty.call(parsed,"study")){
+      if(!Array.isArray(parsed.study))throw new Error("study must be an array.");
+      entries.push([K.study,JSON.stringify(parsed.study.filter(item=>item?.kind!=="flashcards"&&item?.mode!=="flashcards"))]);
+    }
+    addObject("plannerDates",K.plannerDates);
+    addArray("todos",K.todos);addObject("promptLibrary",K.promptLibrary,true);
+    if(parsed.examDeadline!==undefined){
+      if(parsed.examDeadline&&(!/^\d{4}-\d{2}-\d{2}$/.test(String(parsed.examDeadline))||Number.isNaN(new Date(`${parsed.examDeadline}T00:00:00`).getTime())))throw new Error("examDeadline must use YYYY-MM-DD.");
+      entries.push(["examflow_exam_deadline",parsed.examDeadline?JSON.stringify(String(parsed.examDeadline)):null]);
+    }
+    if(!entries.length)throw new Error("The backup contains no supported data.");
+    await QuizStorage.batch(entries);
 
     settings=loadSettings();
+    if(Object.prototype.hasOwnProperty.call(parsed,"flashcards"))Flashcards.refresh();
+    if(Object.prototype.hasOwnProperty.call(parsed,"sessions"))sessionId=null;
     if(parsed.promptLibrary!==undefined&&typeof initPromptLibrary==="function")await initPromptLibrary();
-    renderSessions();renderDashboard();renderPlans();renderHome();renderTodos();applySettings();
-    await savePersistentBackup();
+    renderSessions();renderDashboard();renderPlans();renderHome();renderTodos();renderPlannerCalendar();renderPlannerTodos();PlanReviewQueue.render();applySettings();
     if(status){
       status.textContent="✓ Backup imported successfully.";
       status.style.color="var(--good)";
@@ -1810,9 +1811,17 @@ async function importDataFile(event){
 }
 
 function exportData(){
- const data={settings,results:get(K.results,[]),goal:get(K.goal,{}),plans:get(K.plans,[]),sessions:get(K.sessions,[]),exams:get(K.exams,[]),recent:get(K.recent,[]),promptLibrary:get(K.promptLibrary,null)},a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download="examflow-data.json";a.click()
+ const data={format:"examflow-library",version:1,exportedAt:new Date().toISOString(),settings:get(K.settings,{}),results:get(K.results,[]),goal:get(K.goal,{}),plans:get(K.plans,[]),sessions:get(K.sessions,[]),exams:get(K.exams,[]),recent:get(K.recent,[]),study:get(K.study,[]).filter(item=>item?.kind!=="flashcards"&&item?.mode!=="flashcards"),plannerDates:get(K.plannerDates,{}),todos:get(K.todos,[]),promptLibrary:get(K.promptLibrary,{}),flashcards:get(K.flashcards,{version:1,decks:[],session:null,activity:[]}),reviewQueue:get(K.reviewQueue,{}),examDeadline:getSavedExamDeadline()};
+ const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"})),a=document.createElement("a");a.href=url;a.download="examflow-data.json";a.click();URL.revokeObjectURL(url);
 }
-function resetData(){if(confirm("Reset all local ExamFlow data?")){Object.values(K).forEach(x=>localStorage.removeItem(x));localStorage.removeItem("examflow_exam_deadline");location.reload()}}
+async function resetData(){
+ if(!confirm("Reset all local ExamFlow data?"))return;
+ try{
+  const timestamp=new Date().toISOString();
+  await QuizStorage.batch([...new Set([...Object.values(K),"examflow_exam_deadline","examflow_last_reset"])].map(key=>[key,key==="examflow_last_reset"?timestamp:key===K.flashcards?JSON.stringify({version:1,decks:[],session:null,activity:[]}):null]));
+  location.reload();
+ }catch(error){toast("Could not reset data: "+error.message)}
+}
 
 
 
@@ -1856,11 +1865,16 @@ async function pasteFromClipboard(targetId,statusId,buttonId){
 function saveExamDeadline(sourceId="planExamDeadlineInput"){
   const v=document.getElementById(sourceId)?.value;
   if(!v){toast("Choose your final exam date");return}
-  localStorage.setItem("examflow_exam_deadline",v);
+  put("examflow_exam_deadline",v);
   renderExamDeadline();
+  renderPlannerCalendar();renderStudySuggestions();
   toast("Final exam date saved ✓");
 }
-function getSavedExamDeadline(){return localStorage.getItem("examflow_exam_deadline")||""}
+function getSavedExamDeadline(){
+ const raw=QuizStorage.getItem("examflow_exam_deadline");
+ if(!raw)return "";
+ try{const value=JSON.parse(raw);return typeof value==="string"?value:""}catch{return /^\d{4}-\d{2}-\d{2}$/.test(raw)?raw:""}
+}
 function setDeadlineInputValue(v){
   ["planExamDeadlineInput","dashboardExamDeadlineInput"].forEach(id=>{
     const input=document.getElementById(id);if(input)input.value=v;
@@ -1902,12 +1916,10 @@ if(!window.examflowDeadlineInterval)window.examflowDeadlineInterval=setInterval(
 const QUESTION_SIDEBAR_KEY="examflow_question_sidebar_open";
 
 function getQuestionSidebarState(){
-  try{return localStorage.getItem(QUESTION_SIDEBAR_KEY)==="true"}
-  catch(error){console.warn("Could not read the question palette preference:",error);return false}
+  return get(QUESTION_SIDEBAR_KEY,false)===true;
 }
 function setQuestionSidebarState(open){
-  try{localStorage.setItem(QUESTION_SIDEBAR_KEY,open?"true":"false")}
-  catch(error){console.warn("Could not save the question palette preference:",error)}
+  put(QUESTION_SIDEBAR_KEY,Boolean(open));
 }
 function syncQuestionSidebar(open){
   const d=document.getElementById("examProgressDrawer");
@@ -2104,12 +2116,31 @@ function studyDateKey(value){
  if(Number.isNaN(date.getTime()))return null;
  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
 }
+function recordStudyActivity(session,result){
+ const date=studyDateKey(result?.date||session?.updatedAt||new Date());
+ if(!date)return;
+ const entries=get(K.study,[]).filter(item=>item.kind!=="flashcards"&&item.mode!=="flashcards");
+ if(result){
+  for(let i=entries.length-1;i>=0;i--)if(entries[i].kind==="session"&&result.examId&&entries[i].examId===result.examId&&entries[i].date===date)entries.splice(i,1);
+  const next={kind:"result",resultId:result.id,examId:result.examId,date,name:result.name,mode:result.mode,answered:Number(result.correct||0)+Number(result.wrong||0),total:result.total,percent:result.percent,updatedAt:result.date||result.timestamp};
+  const index=entries.findIndex(item=>item.resultId===result.id);if(index>=0)entries[index]=next;else entries.push(next);
+ }else{
+  const answered=getSessionAnsweredCount(session);if(!answered)return;
+  const next={kind:"session",sessionId:session.id,examId:session.examId,date,name:session.name,mode:session.mode,answered,total:session.questions?.length||0,updatedAt:session.updatedAt};
+  if(entries.some(item=>item.kind==="result"&&item.examId===session.examId&&item.date===date))return;
+  const index=entries.findIndex(item=>item.kind==="session"&&item.sessionId===session.id&&item.date===date);if(index>=0)entries[index]=next;else entries.push(next);
+ }
+ put(K.study,entries);
+}
 function getHomeStudyHistory(sessions,results){
- const history=[];
+ const history=get(K.study,[]).filter(item=>item.kind!=="flashcards"&&item.mode!=="flashcards").map(item=>({
+   ...item,kind:item.kind==="result"||item.resultId?"result":"session",
+   date:item.date||studyDateKey(item.updatedAt||item.createdAt)
+ })).filter(item=>item.date);
  sessions.forEach(session=>{
    const date=studyDateKey(session.updatedAt||session.createdAt);
    const answered=getSessionAnsweredCount(session);
-   if(date&&answered)history.push({kind:"session",sessionId:session.id,examId:session.examId,name:session.name,mode:session.mode,answered,total:session.questions?.length||0,date,updatedAt:session.updatedAt||session.createdAt,examFinished:session.examFinished});
+   if(date&&answered&&!history.some(item=>item.kind==="session"&&item.sessionId===session.id&&item.date===date)&&!history.some(item=>item.kind==="result"&&item.examId===session.examId&&item.date===date))history.push({kind:"session",sessionId:session.id,examId:session.examId,name:session.name,mode:session.mode,answered,total:session.questions?.length||0,date,updatedAt:session.updatedAt||session.createdAt,examFinished:session.examFinished});
  });
  results.forEach(result=>{
    const date=studyDateKey(result.date||result.timestamp);
@@ -2117,7 +2148,8 @@ function getHomeStudyHistory(sessions,results){
    for(let index=history.length-1;index>=0;index--){
      if(history[index].kind==="session"&&result.examId&&history[index].examId===result.examId&&history[index].date===date)history.splice(index,1);
    }
-   history.push({kind:"result",resultId:result.id,examId:result.examId,name:result.name,mode:result.mode,answered:Number(result.correct||0)+Number(result.wrong||0),total:Number(result.total)||0,percent:Number(result.percent)||0,date,updatedAt:result.date||result.timestamp});
+   const next={kind:"result",resultId:result.id,examId:result.examId,name:result.name,mode:result.mode,answered:Number(result.correct||0)+Number(result.wrong||0),total:Number(result.total)||0,percent:Number(result.percent)||0,date,updatedAt:result.date||result.timestamp};
+   const existing=history.findIndex(item=>item.kind==="result"&&item.resultId===result.id);if(existing>=0)history[existing]=next;else history.push(next);
  });
  return history.sort((a,b)=>String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")));
 }
@@ -2196,8 +2228,7 @@ function renderStudyWorkspace(sessions,results){
  const tokens=[...new Set(studySearchText(studySearchQuery).split(" ").filter(Boolean))],searching=tokens.length>0;
  let records=studySelectedDate?history.filter(item=>item.date===studySelectedDate):searching?studySearchInventory(sessions,results,savedExams):active;
  if(searching){
-  records=records.filter(item=>item.kind!=="flashcards")
-   .map(item=>({...item,match:studyFindMatch(item,sourceFor(item),tokens)}))
+   records=records.map(item=>({...item,match:studyFindMatch(item,sourceFor(item),tokens)}))
    .filter(item=>item.match)
    .sort((a,b)=>Number(b.match.titleMatch)-Number(a.match.titleMatch)||String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")));
  }
@@ -2209,9 +2240,9 @@ function renderStudyWorkspace(sessions,results){
    const time=updated&&!Number.isNaN(updated.getTime())?updated.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"";
    const kind=item.kind==="result"?"result":session?"session":"quiz",idValue=item.kind==="result"?item.resultId:session?session.id:item.examId;
    const menu=idValue?`<details class="study-session-menu"><summary aria-label="Quiz options for ${esc(item.name||"Untitled quiz")}" title="Quiz options">⋯</summary><div class="study-session-menu-panel"><button type="button" data-download-study-quiz="${esc(idValue)}" data-study-quiz-kind="${kind}">Download quiz JSON</button><button type="button" data-rename-study-quiz="${esc(idValue)}" data-study-quiz-kind="${kind}">Edit title</button><button type="button" class="study-menu-delete" data-delete-study-quiz="${esc(idValue)}" data-study-quiz-kind="${kind}">Delete saved quiz</button></div></details>`:"";
-   const action=session&&!completed?"session":item.examId&&getExamRecord(item.examId)?"quiz":"";
-   const actionId=session&&!completed?session.id:item.examId||"";
-   const actionLabel=action==="session"?"Continue":item.kind==="result"||completed?"Retake":"Start";
+   const action=item.kind==="result"?"result":session&&!completed?"session":item.examId&&getExamRecord(item.examId)?"quiz":"";
+   const actionId=item.kind==="result"?item.resultId:session&&!completed?session.id:item.examId||"";
+   const actionLabel=action==="session"?"Continue":action==="result"?"Review":completed?"Retake":"Start";
    return `<article class="study-session-card">
      <div class="study-card-meta"><span>${item.kind==="result"?"Completed":item.kind==="quiz"?"Saved quiz":item.mode==="practice"?"Practice":"Exam"}</span><div class="study-card-status">${completed?"Completed":item.kind==="quiz"?"Ready to start":"Progress saved"}${menu}</div></div>
      <h4>${esc(item.name||"Untitled quiz")}</h4>${item.match?.snippet?`<p class="study-search-match">${esc(item.match.snippet)}</p>`:""}
@@ -2239,7 +2270,7 @@ function renderStudyWorkspace(sessions,results){
 document.addEventListener("click",event=>{
  if(event.target.closest("[data-clear-study-search]")){clearTimeout(studySearchTimer);studySearchQuery="";refreshStudySearch(true);return}
  const open=event.target.closest("[data-study-open]");
- if(open){if(open.dataset.studyOpen==="session")restoreSession(open.dataset.studyId);else openRecentQuiz(open.dataset.studyId);return}
+ if(open){if(open.dataset.studyOpen==="session")restoreSession(open.dataset.studyId);else if(open.dataset.studyOpen==="result")openSavedResult(open.dataset.studyId);else openRecentQuiz(open.dataset.studyId);return}
  const menu=event.target.closest(".study-session-menu");
  document.querySelectorAll(".study-session-menu[open]").forEach(item=>{if(item!==menu)item.open=false});
  const download=event.target.closest("[data-download-study-quiz]");
@@ -2275,7 +2306,33 @@ function renderHome(){
  Object.entries(homeMetrics).forEach(([key,value])=>{const el=document.getElementById(key);if(el)el.textContent=value});
  const studyList=document.getElementById("homeSessionsList");
  if(studyList)studyList.innerHTML=renderStudyWorkspace(ss,rs);
+ renderStudySuggestions();
 }
+let studySuggestionsDismissed=false;
+function renderStudySuggestions(){
+ const host=document.getElementById("studySuggestions"),list=document.getElementById("studySuggestionsList"),summary=document.getElementById("studySuggestionsSummary");
+ if(!host||!list)return;
+ if(studySuggestionsDismissed){host.hidden=true;return}
+ const today=plannerDateKey(new Date()),items=[];
+ const overdue=get(K.todos,[]).filter(todo=>!todo.done&&todo.deadline&&todo.deadline<today);
+ const session=get(K.sessions,[]).find(item=>!item.examFinished);
+ const plans=get(K.plans,[]).filter(plan=>plan.date>=today).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ const deadline=getSavedExamDeadline();
+ if(overdue.length)items.push({title:`${overdue.length} overdue study task${overdue.length===1?"":"s"}`,detail:`Next: ${overdue[0].text}`,label:"Review tasks",action:"planner"});
+ if(session)items.push({title:"Continue your CBQ",detail:`${session.name} · ${getSessionAnsweredCount(session)} of ${session.questions.length} answered`,label:"Continue",action:"session",id:session.id});
+ if(plans.length&&items.length<2)items.push({title:"Upcoming planned quiz",detail:`${plans[0].name} · ${plans[0].date}`,label:"Open Plan",action:"planner"});
+ if(deadline&&items.length<2)items.push({title:"Final exam countdown",detail:`Target date: ${deadline}`,label:"View calendar",action:"planner"});
+ if(!items.length){host.hidden=true;return}
+ host.hidden=false;
+ if(summary)summary.textContent="A few useful next steps from your saved study data.";
+ list.innerHTML=items.slice(0,2).map(item=>`<article class="study-suggestion-item"><div><strong>${esc(item.title)}</strong><p>${esc(item.detail)}</p></div><button class="btn" type="button" data-study-suggestion="${item.action}" ${item.id?`data-study-session="${esc(item.id)}"`:""}>${esc(item.label)} →</button></article>`).join("");
+}
+function dismissStudySuggestions(){studySuggestionsDismissed=true;const host=document.getElementById("studySuggestions");if(host)host.hidden=true}
+document.addEventListener("click",event=>{
+ const button=event.target.closest("[data-study-suggestion]");if(!button)return;
+ if(button.dataset.studySuggestion==="session")restoreSession(button.dataset.studySession);
+ else showView("planner");
+});
 
 
 function syncExamTitleBar(){
@@ -2289,7 +2346,8 @@ function syncExamTitleBar(){
 
 function showView(name){
  closeMobileNav();
- const resolvedName = ["home","exam","settings"].includes(name) ? name : "home";
+ const allowedViews=["home","exam","dashboard","testResults","planner","flashcards","settings"];
+ const resolvedName = allowedViews.includes(name) ? name : "home";
  if(resolvedName === "exam" && (!questions || questions.length===0)){
   toast("No quiz loaded. Please open a CBQ first.");
   return showView("home");
@@ -2297,59 +2355,24 @@ function showView(name){
  if(resolvedName === "exam"){updateTimerUI();updateModeUI();}
  document.body.classList.toggle("exam-active",resolvedName==="exam");
  window.scrollTo({top:0,behavior:"smooth"});
-<<<<<<< HEAD
- ["home","exam","settings"].forEach(x=>{
+ allowedViews.forEach(x=>{
   const el=document.getElementById(x+"View");
   if(el)el.classList.toggle("active",x===resolvedName);
  });
- ["navHome","navExam","navSettings"].forEach(x=>{
+ ["navHome","navExam","navDashboard","navPlanner","navFlashcards","navSettings"].forEach(x=>{
   const el=document.getElementById(x); if(el)el.classList.remove("active");
  });
- const activeNav=document.getElementById({home:"navHome",exam:"navExam",settings:"navSettings"}[resolvedName]);
+ const activeNav=document.getElementById({home:"navHome",exam:"navExam",dashboard:"navDashboard",testResults:"navDashboard",planner:"navPlanner",flashcards:"navFlashcards",settings:"navSettings"}[resolvedName]);
  if(activeNav)activeNav.classList.add("active");
  if(resolvedName==="home"){renderHome();if(typeof renderTodos==='function')renderTodos();}
+ if(resolvedName==="dashboard"){renderDashboard();renderExamDeadline();}
+ if(resolvedName==="planner"){renderPlans();renderPlannerCalendar();renderPlannerTodos();renderExamDeadline();PlanReviewQueue.render();}
+ if(resolvedName==="flashcards")Flashcards.refresh();
  if(resolvedName==="settings")updatePersistentStorageInfo();
  if(resolvedName==="exam"){setTimeout(()=>{applyQuestionSidebarState();syncExamTitleBar()},0)}
-=======
- ["home","exam","dashboard","testResults","planner","flashcards","settings"].forEach(x=>document.getElementById(x+"View").classList.toggle("active",x===name));
- ["navHome","navExam","navDashboard","navPlanner","navFlashcards","navSettings"].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove("active")});
- if(name!=="testResults"){const nav=document.getElementById({home:"navHome",exam:"navExam",dashboard:"navDashboard",planner:"navPlanner",flashcards:"navFlashcards",settings:"navSettings"}[name]);if(nav)nav.classList.add("active")}
- if(name==="home"){renderHome();if(typeof renderTodos==='function')renderTodos();}if(name==="dashboard"){renderDashboard();renderExamDeadline();}if(name==="planner")renderPlans();if(name==="exam"){setTimeout(()=>{applyQuestionSidebarState();syncExamTitleBar()},0)}
- if(name==="settings"){const feedback=document.getElementById("instantFeedback");if(feedback)feedback.checked=!!settings.instantFeedback;
- const duration=document.getElementById("defaultDuration");if(duration)duration.value=String(settings.defaultDuration||30);
- const marks=document.getElementById("defaultMarks");if(marks)marks.value=settings.defaultMarks??1;
- const negative=document.getElementById("defaultNegative");if(negative)negative.value=settings.defaultNegative??0;
- updateTheme();updateModeUI()}
- if(name==="flashcards")renderFlashcards();
->>>>>>> origin/main
 }
 function toggleMobileNav(){document.body.classList.toggle("mobile-nav-open")}
 function closeMobileNav(){document.body.classList.remove("mobile-nav-open")}
-const flashcardSeedData=JSON.parse(document.getElementById("flashcardSeedData")?.textContent||"[]");
-let flashcards=get("examflow_flashcards_v1",[]),flashcardIndex=0,flashcardShowingAnswer=false;
-if(!Array.isArray(flashcards))flashcards=[];
-if(flashcards.length<10){for(const seed of flashcardSeedData){if(flashcards.length>=10)break;if(!flashcards.some(card=>card.id===seed.id))flashcards.push(seed)}saveFlashcards()}
-function saveFlashcards(){put("examflow_flashcards_v1",flashcards)}
-function addFlashcard(){
- const question=document.getElementById("flashQuestion").value.trim(),answer=document.getElementById("flashAnswer").value.trim();
- if(!question||!answer){toast("Add both a question and an answer");return}
- flashcards.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),question,answer});flashcardIndex=flashcards.length-1;flashcardShowingAnswer=false;
- document.getElementById("flashQuestion").value="";document.getElementById("flashAnswer").value="";saveFlashcards();renderFlashcards();toast("Flashcard added");
-}
-function renderFlashcards(){
- const count=document.getElementById("flashcardCount"),total=document.getElementById("flashcardTotal"),text=document.getElementById("flashcardText"),label=document.querySelector(".flashcard-label"),list=document.getElementById("flashcardList");if(!count)return;
- count.textContent=flashcards.length?`Card ${flashcardIndex+1} of ${flashcards.length}`:"No cards yet";total.textContent=flashcards.length;
- const cardFace=document.getElementById("flashcardFace");
- if(flashcards.length){const card=flashcards[flashcardIndex]||flashcards[0];text.textContent=flashcardShowingAnswer?card.answer:card.question;label.textContent=flashcardShowingAnswer?"ANSWER":"QUESTION";cardFace.style.setProperty("--flashcard-hue",String((flashcardIndex*36+12)%360))}else{text.textContent="Add a card to get started";label.textContent="QUESTION";cardFace.style.removeProperty("--flashcard-hue")}
- list.innerHTML=flashcards.map((card,i)=>`<div class="flashcard-row" style="--flashcard-hue:${(i*36+12)%360}"><button type="button" class="flashcard-row-open" onclick="selectFlashcard(${i})">${escapeHtml(card.question)}</button><button type="button" class="flashcard-delete" aria-label="Delete flashcard" onclick="deleteFlashcard(${i})">×</button></div>`).join("");
-}
-function escapeHtml(value){const d=document.createElement("div");d.textContent=value;return d.innerHTML}
-function selectFlashcard(index){flashcardIndex=index;flashcardShowingAnswer=false;renderFlashcards()}
-function flipFlashcard(){if(!flashcards.length)return;flashcardShowingAnswer=!flashcardShowingAnswer;renderFlashcards()}
-function nextFlashcard(){if(!flashcards.length)return;flashcardIndex=(flashcardIndex+1)%flashcards.length;flashcardShowingAnswer=false;renderFlashcards()}
-function previousFlashcard(){if(!flashcards.length)return;flashcardIndex=(flashcardIndex-1+flashcards.length)%flashcards.length;flashcardShowingAnswer=false;renderFlashcards()}
-function shuffleFlashcards(){if(flashcards.length<2)return;for(let i=flashcards.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[flashcards[i],flashcards[j]]=[flashcards[j],flashcards[i]]}flashcardIndex=0;flashcardShowingAnswer=false;saveFlashcards();renderFlashcards()}
-function deleteFlashcard(index){flashcards.splice(index,1);flashcardIndex=Math.min(flashcardIndex,Math.max(0,flashcards.length-1));flashcardShowingAnswer=false;saveFlashcards();renderFlashcards()}
 function toast(s){const x=document.getElementById("toast");x.textContent=s;x.classList.add("show");clearTimeout(window.tt);window.tt=setTimeout(()=>x.classList.remove("show"),2200)}
 
 

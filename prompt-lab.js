@@ -2,17 +2,19 @@
 let promptLibrary={version:1,activeId:null,prompts:[]};
 const promptDrafts=new Map();
 const originalPrompts=new Map();
-const promptRoles={'original-cbq':'cbq','original-flashcards':'flashcards','original-payload':'payload'};
+const promptRoles={'original-cbq':'cbq','original-payload':'payload'};
 let localPromptFile=false,promptFileQueue=Promise.resolve();
 const promptRole=p=>p&&promptRoles[p.id]||null;
 function validPromptLibrary(data){
- if(!data||data.version!==1||!Array.isArray(data.prompts)||!data.prompts.length||data.prompts.length>100)throw Error('Use a prompt library JSON with 1–100 slots.');
+ if(!data||data.version!==1||!Array.isArray(data.prompts))throw Error('Use a prompt library JSON with 1–100 slots.');
+ const prompts=data.prompts.filter(p=>p?.id!=='original-flashcards');
+ if(!prompts.length||prompts.length>100)throw Error('Use a prompt library JSON with 1–100 supported slots.');
  const ids=new Set();
- for(const p of data.prompts){
+ for(const p of prompts){
   if(!p||typeof p.id!=='string'||ids.has(p.id)||typeof p.name!=='string'||!p.name.trim()||typeof p.text!=='string'||p.text.length>100000)throw Error('Each slot needs a unique ID, name and prompt of up to 100,000 characters.');
   ids.add(p.id);
  }
- return {version:1,prompts:data.prompts.map(p=>({id:p.id,name:p.name,text:p.text})),activeId:ids.has(data.activeId)?data.activeId:data.prompts[0].id};
+ return {version:1,prompts:prompts.map(p=>({id:p.id,name:p.name,text:p.text})),activeId:ids.has(data.activeId)?data.activeId:prompts[0].id};
 }
 function activePrompt(){return promptLibrary.prompts.find(p=>p.id===promptLibrary.activeId)}
 function getPromptText(role='cbq'){return promptLibrary.prompts.find(p=>promptRole(p)===role)?.text||''}
@@ -44,7 +46,7 @@ function renderPromptSettings(){
  document.getElementById('deletePromptBtn').hidden=!p||!!role;
  document.getElementById('restorePromptBtn').hidden=!role;
  document.getElementById('restorePromptBtn').disabled=!originalPrompts.has(p?.id);
- document.getElementById('promptUsage').textContent={cbq:'Hero CBQ prompt',flashcards:'Hero & flashcard prompt',payload:'Question → ChatGPT'}[role]||'Experimental';
+ document.getElementById('promptUsage').textContent={cbq:'Hero CBQ prompt',payload:'Question → ChatGPT'}[role]||'Experimental';
  renderPromptSlots();promptStatus(draft?'Unsaved changes':p?'':'Prompts could not be loaded. Serve the app over HTTP.');
 }
 function backupPromptLibrary(){put('examflow_prompt_library_v1',{...promptLibrary,drafts:Object.fromEntries(promptDrafts)})}
@@ -153,4 +155,8 @@ async function initPromptLibrary(){
  }catch{}
  if(!backup&&settings.seedPrompt){const p=promptLibrary.prompts.find(p=>p.id==='original-cbq');if(p)p.text=settings.seedPrompt}
  renderPromptSettings();
+ if(Array.isArray(backup?.prompts)&&backup.prompts.some(p=>p.id==='original-flashcards')){
+  await QuizStorage.ready;
+  try{backupPromptLibrary();if(localPromptFile)await persistPromptFile()}catch(error){promptStatus(error.message,true)}
+ }
 }
