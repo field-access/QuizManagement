@@ -11,6 +11,10 @@
 
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="prompt-library.css">
+<link rel="stylesheet" href="css/library-storage.css">
+<link rel="stylesheet" href="css/nonflashcard-features.css">
+<link rel="stylesheet" href="css/flashcards.css">
+<link rel="stylesheet" href="css/cbq-review-preview.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Libre+Baskerville:wght@400;700&family=Lora:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Merriweather:wght@400;700&family=Nunito+Sans:wght@400;600;700;800&family=Open+Sans:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&family=Source+Serif+4:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -18,17 +22,21 @@
 </head>
 <body>
 <div class="app">
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="icon-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8m-8 4h8"/></symbol>
+  <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+  <symbol id="icon-bookmark" viewBox="0 0 24 24"><path d="M6 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-6-4-6 4z"/></symbol>
+  <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+</svg>
 <header>
   <button class="brand home-brand" onclick="showView('home')" aria-label="Go to ExamFlow home"><div class="logo">🧠</div><span>ExamFlow</span></button>
   <button class="mobile-menu-toggle" type="button" onclick="toggleMobileNav()" aria-label="Open navigation" aria-controls="mobileNav">Menu</button>
   <nav class="topnav">
     <button id="navHome" class="active" onclick="showView('home')">⌂ Home</button>
     <button id="navExam" onclick="showView('exam')">Exam</button>
-
     <button id="navDashboard" onclick="showView('dashboard')">Results</button>
     <button id="navPlanner" onclick="showView('planner')">Plan</button>
     <button id="navFlashcards" onclick="showView('flashcards')">Flashcards</button>
-
     <button id="navSettings" onclick="showView('settings')">Settings</button>
   </nav>
   <div class="global-exam-title" id="globalExamTitle" aria-live="polite"></div>
@@ -42,10 +50,7 @@
   </div>
 </header>
 <nav id="mobileNav" class="mobile-nav" aria-label="Mobile navigation">
-  <button onclick="showView('home')">Home</button><button onclick="showView('exam')">Exam</button><button onclick="showView('settings')">Settings</button>
-
   <button onclick="showView('home')">Home</button><button onclick="showView('exam')">Exam</button><button onclick="showView('dashboard')">Results</button><button onclick="showView('planner')">Plan</button><button onclick="showView('flashcards')">Flashcards</button><button onclick="showView('settings')">Settings</button>
-
 </nav>
 
 
@@ -63,11 +68,7 @@
       <p>A Concept Breakdown Quiz takes one complex topic and walks you through five small questions, each building the next step of understanding until the solution makes sense.</p>
       <div class="hero-actions">
         <button class="btn primary" onclick="pasteAndStart()">▶ Start CBQ</button>
-
-        <button class="btn" onclick="showView('flashcards')">🗂 Flashcards</button>
-        <button class="btn" onclick="showView('dashboard')">📊 Results</button>
-        <button class="btn" onclick="showView('planner')">🗓 Future tests</button>
-
+        <button class="btn" type="button" onclick="showView('flashcards')">🗂 Flashcards</button>
       </div>
       <div class="cbq-flow"><span>One concept</span><i>→</i><span>Small reasoning steps</span><i>→</i><span>Confident solution</span></div>
     </section>
@@ -91,6 +92,11 @@
     </div>
   </section>
   </div>
+
+  <section id="studySuggestions" class="card study-suggestions" aria-labelledby="studySuggestionsTitle" hidden>
+    <div class="panel-heading"><div><h3 id="studySuggestionsTitle">Study suggestions</h3><small id="studySuggestionsSummary">A few useful next steps from your saved study data.</small></div><button class="btn" type="button" onclick="dismissStudySuggestions()" aria-label="Dismiss study suggestions">×</button></div>
+    <div id="studySuggestionsList"></div>
+  </section>
 
   <div class="dashcols">
     <section class="panel card advice-panel home-todo-panel">
@@ -281,148 +287,123 @@
 </div>
 </section>
 
-
 <section id="dashboardView" class="view">
-<div class="dashboard beautiful-dashboard">
-
-  <div class="metrics">
-    <div class="metric card metric-tests"><span class="metric-icon">✓</span><small>Tests completed</small><b id="mTests">0</b></div>
-    <div class="metric card metric-average"><span class="metric-icon">◔</span><small>Average score</small><b id="mAvg">0%</b></div>
-    <div class="metric card metric-best"><span class="metric-icon">★</span><small>Best score</small><b id="mBest">0%</b></div>
-    <div class="metric card metric-questions"><span class="metric-icon">#</span><small>Questions attempted</small><b id="mQuestions">0</b></div>
-    <div class="metric card metric-questions"><span class="metric-icon">✓</span><small>Questions solved</small><b id="mSolved">0</b></div>
-    <div class="metric card metric-focus"><span class="metric-icon">◷</span><small>Focus sessions</small><b id="mPomodoro">0</b></div>
-    <div class="metric card metric-focus"><span class="metric-icon">⌛</span><small>Study minutes</small><b id="mStudyMinutes">0</b></div>
+  <div class="dashboard beautiful-dashboard">
+    <div class="dashhead"><div><h1>Your results</h1><p>Track CBQ progress and review completed attempts.</p></div></div>
+    <div class="metrics">
+      <div class="metric card metric-tests"><span class="metric-icon">✓</span><small>Tests completed</small><b id="mTests">0</b></div>
+      <div class="metric card metric-average"><span class="metric-icon">◔</span><small>Average score</small><b id="mAvg">0%</b></div>
+      <div class="metric card metric-best"><span class="metric-icon">★</span><small>Best score</small><b id="mBest">0%</b></div>
+      <div class="metric card metric-questions"><span class="metric-icon">#</span><small>Questions attempted</small><b id="mQuestions">0</b></div>
+      <div class="metric card metric-questions"><span class="metric-icon">✓</span><small>Questions solved</small><b id="mSolved">0</b></div>
+    </div>
+    <section class="card goal-panel">
+      <div class="panel-heading"><div><h3>Study goal</h3><small id="goalLabel">Set a goal to track progress</small></div><strong id="goalPercent">0%</strong></div>
+      <div class="study-progress"><i id="goalBar" style="width:0%"></i></div>
+      <div class="goal-controls"><label>Goal<input id="goalInput" type="text" maxlength="120" placeholder="Improve my CBQ performance"></label><label>Target average<select id="goalTarget"><option value="50">50%</option><option value="60">60%</option><option value="70">70%</option><option value="80" selected>80%</option><option value="90">90%</option><option value="100">100%</option></select></label><button class="btn primary" type="button" onclick="saveGoal()">Save goal</button></div>
+    </section>
+    <div class="dashcols results-dashboard-columns">
+      <section class="panel card recent-quizzes-panel"><div class="panel-heading"><div><h3>Recent quizzes</h3><small>Your recently opened CBQs</small></div></div><div id="recentQuizzesList"></div></section>
+      <section class="panel card results-panel"><div class="panel-heading"><div><h3>Recent performance</h3><small>Your latest saved attempts</small></div><button class="text-btn" type="button" aria-label="Refresh dashboard" onclick="renderDashboard()">↻</button></div><div id="resultsList"></div></section>
+    </div>
+    <section class="card result-advice-panel"><h3>Study advice</h3><div id="advice"></div></section>
   </div>
-  <section class="deadline-card card dashboard-deadline-card" aria-label="Final exam countdown">
-    <div class="deadline-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9h17M8 13h.01M12 13h.01M16 13h.01M8 16.5h.01M12 16.5h.01" stroke-linecap="round"/></svg></div>
-    <div class="deadline-copy"><span class="deadline-eyebrow">FINAL EXAM COUNTDOWN</span><strong id="dashboardExamCountdown">No exam date set</strong><span id="dashboardExamDate">Choose a target date to start your countdown.</span></div>
-    <button type="button" class="deadline-picker btn" onclick="openDeadlinePicker('dashboardExamDeadlineInput')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5h16v14H4zM7.5 3.5v4M16.5 3.5v4M4 10h16" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Choose date</span></button><input class="deadline-input" type="date" id="dashboardExamDeadlineInput" onchange="saveExamDeadline('dashboardExamDeadlineInput')" />
-  </section>
-  <div class="dashcols" style="display:flex; flex-direction:column; gap:16px;">
-    <section class="panel card recent-quizzes-panel"><div class="panel-heading"><div><h3>Recent Quizzes</h3><small>Your recently opened quizzes</small></div></div><div id="recentQuizzesList"></div></section>
-    <section class="panel card results-panel"><div class="panel-heading"><div><h3>Recent performance</h3><small>Your latest saved sessions</small></div><button class="text-btn" aria-label="Refresh dashboard" onclick="renderDashboard()">↻</button></div><div id="resultsList"></div></section>
-    <section class="panel card advice-panel"><div class="panel-heading"><div><h3>Next improvement</h3><small>A simple direction for your next session</small></div><span class="advice-mark">↗</span></div><div id="advice" class="empty">Complete a test to unlock performance advice.</div></section>
-  </div>
-</div>
 </section>
 
-
-<!-- DETAILED RESULTS -->
 <section id="testResultsView" class="view">
-<div class="results-page">
-  <div class="results-topbar">
-    <div class="results-title">
-      <div class="results-title-icon">🏆</div>
-      <div><h1>Test Results</h1><p id="resultSubtitle">CBQ · Practice Mode</p></div>
+  <div class="results-page">
+    <div class="results-topbar">
+      <div class="results-title"><div class="results-title-icon">🏆</div><div><h1>Test results</h1><p id="resultSubtitle">CBQ · Practice Mode</p></div></div>
+      <div class="results-actions"><button class="btn" onclick="showView('dashboard')">← Results</button><button class="btn" onclick="retakeLastTest()">↻ Retake</button></div>
     </div>
-    <div class="results-actions">
-      <button class="btn primary" onclick="saveResultCopy()">▣ Save Result</button>
-      <button class="btn" onclick="showView('home')">← Change Exam</button>
-      <button class="btn" onclick="retakeLastTest()">↻ Retake</button>
+    <section class="result-hero card">
+      <div class="result-hero-top"><div id="resultStatus" class="result-status">💪 Needs Improvement</div><div class="result-score"><span id="resultScore">0</span><span id="resultMax">/0</span></div><div id="resultPercent" class="result-percent">0.0%</div><div id="resultTime" class="result-time">◷ Time taken: 0s</div><div class="result-progress"><i id="resultProgressBar"></i></div></div>
+      <div class="result-stats"><div class="result-stat"><div class="result-stat-icon">✓</div><b id="resultAttempted">0</b><small>Attempted</small></div><div class="result-stat correct"><div class="result-stat-icon">✓</div><b id="resultCorrect">0</b><small>Correct</small></div><div class="result-stat wrong"><div class="result-stat-icon">×</div><b id="resultWrong">0</b><small>Wrong</small></div><div class="result-stat skip"><div class="result-stat-icon">−</div><b id="resultSkipped">0</b><small>Skipped</small></div></div>
+      <div id="resultFlashcardReview"></div>
+    </section>
+    <section class="result-section card"><div class="section-head">Section performance</div><div id="sectionPerformance" class="section-body"></div></section>
+    <section class="result-section card"><div class="section-body"><div class="review-head"><div class="review-title">Question review <span id="reviewShown">(0 shown)</span></div><div class="filters"><select id="resultSectionFilter" onchange="renderResultQuestions()"><option>All Sections</option></select><button class="filter-btn active" data-filter="all" onclick="setResultFilter('all')">All</button><button class="filter-btn" data-filter="correct" onclick="setResultFilter('correct')">✓ Correct</button><button class="filter-btn" data-filter="wrong" onclick="setResultFilter('wrong')">× Wrong</button><button class="filter-btn" data-filter="skipped" onclick="setResultFilter('skipped')">− Skipped</button><button class="filter-btn" data-filter="review" onclick="setResultFilter('review')">⚑ Marked</button><button id="practiceMarkedBtn" class="filter-btn practice-marked-btn" type="button" onclick="practiceMarkedQuestions()" hidden>Practice marked</button></div></div></div><div id="resultQuestions"></div></section>
+    <div class="result-bottom-grid"><section class="result-insight card"><h3>What to work on</h3><p id="resultInsight">Complete a test to receive targeted advice.</p></section><section class="result-insight card"><h3>Next step</h3><p id="resultNextStep">Use Practice Mode to strengthen weak concepts, then retake in Exam Mode.</p></section></div>
+  </div>
+</section>
+
+<section id="plannerView" class="view">
+  <div class="planner-page">
+    <div class="planner-hero"><div><h1>Plan</h1><p>Organize upcoming quizzes, study tasks, and important dates.</p></div><button id="openPlanComposerBtn" class="btn primary" type="button" onclick="openPlanComposer()">＋ Plan quiz</button></div>
+    <div class="planner-workspace">
+      <main class="planner-column planner-main-column">
+        <section class="panel card planner-list-card" aria-labelledby="planReviewHeading"><div class="panel-heading"><h3 id="planReviewHeading">Review queue</h3><span class="planner-count" id="planReviewCount">0</span></div><div id="planReviewQueue"></div></section>
+        <section class="panel card planner-list-card" aria-labelledby="plannedQuizHeading"><div class="panel-heading"><h3 id="plannedQuizHeading">Planned quizzes</h3><span class="planner-count" id="plannerCount">0</span></div><div id="plansList" tabindex="0" role="region" aria-label="Planned quizzes"></div></section>
+      </main>
+      <aside class="planner-column planner-side-column" aria-label="Calendar and tasks">
+        <section class="card planner-calendar-card" aria-label="Study calendar">
+          <div class="calendar-toolbar"><button class="btn" type="button" onclick="shiftPlannerCalendar(-1)" aria-label="Previous month">‹</button><strong id="plannerCalendarTitle"></strong><button class="btn" type="button" onclick="shiftPlannerCalendar(1)" aria-label="Next month">›</button></div>
+          <div id="plannerCalendar" class="planner-calendar"></div><div class="calendar-legend"><span><i class="calendar-dot exam"></i> Exam</span><span><i class="calendar-dot important"></i> Important</span></div>
+          <details id="plannerDateEditor" class="planner-date-details"><summary>Date details</summary><div class="calendar-editor"><label for="plannerDateInput">Date</label><input id="plannerDateInput" type="date" onchange="selectPlannerDate(this.value)"><label for="plannerDateLabel">Date label</label><input id="plannerDateLabel" type="text" placeholder="Add a label" maxlength="80"><div class="calendar-editor-actions"><button class="btn primary" type="button" onclick="savePlannerDate('important')">Mark important</button><button class="btn" type="button" onclick="savePlannerDate('exam')">Set exam</button><button class="btn" type="button" onclick="removePlannerDate()">Remove</button></div></div></details>
+          <div class="deadline-summary"><strong id="planExamCountdown">No exam date set</strong><span id="planExamDate"></span></div>
+        </section>
+        <section class="panel card planner-todo-card" aria-labelledby="planTasksHeading"><div class="panel-heading"><h3 id="planTasksHeading">Study tasks</h3></div><form class="planner-todo-form" onsubmit="event.preventDefault();addPlannerTodo()"><input type="text" id="plannerTodoInput" aria-label="Study task" placeholder="Add a task" maxlength="180"><button class="btn" type="submit">Add</button><input type="date" id="plannerTodoDeadline" aria-label="Task deadline"></form><div id="plannerTodoList"></div></section>
+      </aside>
     </div>
   </div>
+  <dialog id="planComposer" class="planner-composer" aria-labelledby="planComposerTitle"><div class="quick-plan planner-paste-card"><div class="quick-plan-head"><h2 id="planComposerTitle">Plan a quiz</h2><button class="btn" type="button" onclick="closePlanComposer()" aria-label="Close quiz planner">×</button></div><label for="planName">Quiz name</label><input id="planName" type="text" maxlength="120" placeholder="CBQ title"><div class="planner-form-row"><label for="planDate">Date<input id="planDate" type="date"></label><label for="planTime">Time<input id="planTime" type="time"></label></div><label for="planNotes">Notes</label><input id="planNotes" type="text" maxlength="200" placeholder="Optional reminder"><div class="planner-input-heading"><label for="planJson">Quiz JSON (optional)</label><button id="planPasteBtn" class="btn" type="button" onclick="pasteFromClipboard('planJson','planJsonStatus','planPasteBtn')">Paste</button></div><textarea id="planJson" class="home-json-input quick-plan-input" spellcheck="false" placeholder="Paste quiz JSON to enable starting it from Plan…"></textarea><div id="planJsonStatus" class="paste-status" role="status">A quiz JSON is required to start a planned quiz.</div><div class="quick-plan-foot"><button class="btn" type="button" onclick="clearPlanComposer()">Clear</button><button class="btn primary" type="button" onclick="savePlan()">Save plan</button></div></div></dialog>
+</section>
 
-  <section class="result-hero card">
-    <div class="result-hero-top">
-      <div id="resultStatus" class="result-status">💪 Needs Improvement</div>
-      <div class="result-score"><span id="resultScore">0</span><span id="resultMax">/0</span></div>
-      <div id="resultPercent" class="result-percent">0.0%</div>
-      <div id="resultTime" class="result-time">◷ Time taken: 0s</div>
-      <div class="result-progress"><i id="resultProgressBar"></i></div>
+<section id="flashcardsView" class="view">
+  <div class="fc-page">
+    <div class="fc-heading">
+      <div><h1>Flashcards</h1></div>
+      <div class="fc-heading-actions">
+        <button class="btn" data-fc="copy-prompt"><svg class="ui-icon"><use href="#icon-copy"/></svg>Copy prompt</button>
+        <button class="btn" data-fc="copy-schema"><svg class="ui-icon"><use href="#icon-copy"/></svg>Copy schema</button>
+        <button class="btn primary" data-fc="open-import"><svg class="ui-icon"><use href="#icon-file"/></svg>Add a deck</button>
+        <button class="btn fc-help-button" data-fc="help" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
+      </div>
     </div>
-    <div class="result-stats">
-      <div class="result-stat"><div class="result-stat-icon">✓</div><b id="resultAttempted">0</b><small>Attempted</small></div>
-      <div class="result-stat correct"><div class="result-stat-icon">✓</div><b id="resultCorrect">0</b><small>Correct</small></div>
-      <div class="result-stat wrong"><div class="result-stat-icon">×</div><b id="resultWrong">0</b><small>Wrong</small></div>
-      <div class="result-stat skip"><div class="result-stat-icon">−</div><b id="resultSkipped">0</b><small>Skipped</small></div>
-    </div>
-  </section>
-
-  <section class="result-section card">
-    <div class="section-head">Section Performance</div>
-    <div id="sectionPerformance" class="section-body"></div>
-  </section>
-
-  <section class="result-section card">
-    <div class="section-body">
-      <div class="review-head">
-        <div class="review-title">⚱ Question Review <span id="reviewShown">(0 shown)</span></div>
-        <div class="filters">
-          <select id="resultSectionFilter" onchange="renderResultQuestions()"><option>All Sections</option></select>
-          <button class="filter-btn active" data-filter="all" onclick="setResultFilter('all')">All</button>
-          <button class="filter-btn" data-filter="correct" onclick="setResultFilter('correct')">✓ Correct</button>
-          <button class="filter-btn" data-filter="wrong" onclick="setResultFilter('wrong')">× Wrong</button>
-          <button class="filter-btn" data-filter="skipped" onclick="setResultFilter('skipped')">− Skipped</button>
+    <p id="fcNotice" class="fc-notice" role="status" hidden></p>
+    <div id="fcLibrary">
+      <div class="fc-stats" id="fcStats"></div>
+      <section id="fcImport" class="fc-panel" hidden aria-labelledby="fcImportTitle">
+        <div class="fc-panel-heading"><div><h2 id="fcImportTitle">Add a deck</h2></div><button class="btn" data-fc="close-import" aria-label="Close deck importer">Close</button></div>
+        <div class="fc-import-grid">
+          <div><label for="fcJson">Flashcard JSON</label><textarea id="fcJson" spellcheck="false" placeholder='{"name":"My topic","cards":[{"front":"A question?","back":"A clear answer","tags":["topic"]}]}'></textarea><div class="fc-actions"><label class="btn fc-file">Choose JSON file<input id="fcFile" type="file" accept=".json,application/json"></label><button class="btn" data-fc="preview">Preview</button><button class="btn primary" data-fc="load-import" title="Paste clipboard & load (Ctrl/Cmd+Enter)">Load deck</button></div><p id="fcImportStatus" role="status"></p></div>
+          <details class="fc-import-help"><summary>Prompt & example</summary><div class="fc-actions"><button class="btn" data-fc="copy-prompt">Copy prompt</button><button class="btn" data-fc="example">Try an example</button></div></details>
+        </div>
+        <div id="fcPreview" class="fc-preview" hidden></div>
+      </section>
+      <div id="fcLibraryIndex" class="fc-library-index">
+        <aside id="fcDateIndex" class="fc-date-index" aria-label="Flashcard date index"></aside>
+        <div class="fc-library-lists">
+          <div class="fc-library-switch" role="group" aria-label="Flashcard collections"><button id="fcDeckCollection" type="button" class="btn" data-fc-collection="decks" aria-controls="fcDeckSection" aria-pressed="true">Your decks <span id="fcDeckCount"></span></button><button id="fcReviewCollection" type="button" class="btn" data-fc-collection="reviews" aria-controls="fcReviewSection" aria-pressed="false">Saved CBQ reviews <span id="fcSavedReviewCount"></span></button></div>
+          <section id="fcDeckSection" aria-labelledby="fcDeckCollection"><div id="fcDecks" class="fc-dated-decks"></div></section>
+          <section id="fcReviewSection" aria-labelledby="fcReviewCollection" hidden><div id="fcSavedReviews" class="fc-dated-decks"></div></section>
         </div>
       </div>
     </div>
-    <div id="resultQuestions"></div>
-  </section>
-
-  <div class="result-bottom-grid">
-    <section class="result-insight card"><h3>🧠 What to work on</h3><p id="resultInsight">Complete a test to receive targeted advice.</p></section>
-    <section class="result-insight card"><h3>🎯 Next step</h3><p id="resultNextStep">Use Practice Mode to strengthen weak concepts, then retake in Exam Mode.</p></section>
+    <section id="fcStudy" hidden aria-labelledby="fcStudyTitle">
+      <div class="fc-study-toolbar"><button class="btn" data-fc="library">← Decks</button><div><h2 id="fcStudyTitle"></h2><span id="fcStudyMeta"></span></div><button class="btn" data-fc="undo" id="fcUndo" hidden title="Undo last rating (U)">Undo</button><button class="btn fc-help-button" data-fc="help" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
+      <div id="fcStudyBody"></div>
+    </section>
   </div>
-</div>
+  <dialog id="fcKeyDialog" class="fc-key-dialog" aria-labelledby="fcKeyTitle">
+    <div class="fc-panel-heading"><h2 id="fcKeyTitle">Flashcard shortcuts</h2><button class="btn" data-fc="close-help">Close</button></div>
+    <dl class="fc-key-list">
+      <div><dt><kbd>Alt</kbd> + <kbd>5</kbd></dt><dd>Open Flashcards</dd></div>
+      <div><dt><kbd>Space</kbd> / <kbd>Enter</kbd></dt><dd>Flip card</dd></div>
+      <div><dt><kbd>1</kbd>–<kbd>4</kbd></dt><dd>Again / Hard / Good / Easy</dd></div>
+      <div><dt><kbd>U</kbd></dt><dd>Undo last rating</dd></div>
+      <div><dt><kbd>←</kbd> / <kbd>→</kbd></dt><dd>Previous / next in Browse</dd></div>
+      <div><dt><kbd>E</kbd></dt><dd>Edit card in Browse</dd></div>
+      <div><dt><kbd>B</kbd></dt><dd>Back to decks</dd></div>
+      <div><dt><kbd>N</kbd></dt><dd>Add a deck from the library</dd></div>
+      <div><dt><kbd>C</kbd></dt><dd>Copy schema from the library</dd></div>
+      <div><dt><kbd data-shortcut-primary>Ctrl</kbd> + <kbd>Enter</kbd></dt><dd>Paste clipboard & load deck · save card edits</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>Close help, cancel edit, or close import</dd></div>
+      <div><dt><kbd>?</kbd></dt><dd>Show shortcuts</dd></div>
+    </dl><p>Ratings work on the answer side. Text fields keep their normal editing shortcuts.</p>
+  </dialog>
 </section>
 
-<!-- PLANNER -->
-<section id="plannerView" class="view">
-<div class="planner-page">
-  <div class="planner-hero"><div><div class="hero-kicker">TEST PLANNER</div><h1>Upcoming tests, one place.</h1><p>Paste the CBQ JSON and ExamFlow keeps your planned tests separate from your performance dashboard.</p></div><button class="btn" onclick="showView('home')">⌂ Home</button></div>
-
-  <section class="deadline-card card" aria-label="Final exam countdown">
-    <div class="deadline-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9h17M8 13h.01M12 13h.01M16 13h.01M8 16.5h.01M12 16.5h.01" stroke-linecap="round"/></svg></div>
-    <div class="deadline-copy"><span class="deadline-eyebrow">FINAL EXAM COUNTDOWN</span><strong id="planExamCountdown">No exam date set</strong><span id="planExamDate">Choose a target date to start your countdown.</span></div>
-    <button type="button" class="deadline-picker btn" onclick="openDeadlinePicker('planExamDeadlineInput')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5h16v14H4zM7.5 3.5v4M16.5 3.5v4M4 10h16" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Choose date</span></button><input class="deadline-input" type="date" id="planExamDeadlineInput" onchange="saveExamDeadline('planExamDeadlineInput')" />
-  </section>
-
-  <section class="card quick-plan planner-paste-card">
-    <div class="quick-plan-head"><div><h3>Paste quiz JSON</h3><small>Scheduling fields: <code>date</code>, <code>examDate</code>, <code>scheduledDate</code>, <code>time</code>.</small></div><button id="planPasteBtn" class="btn primary" type="button" onclick="pasteFromClipboard('planJson','planJsonStatus','planPasteBtn')">📋 Paste</button></div>
-    <textarea id="planJson" class="home-json-input quick-plan-input" spellcheck="false" placeholder="Paste your CBQ JSON here..."></textarea>
-    <div class="quick-plan-foot"><div id="planJsonStatus" class="paste-status">Paste → Plan Test</div><button class="btn primary" type="button" onclick="saveQuickPlan()">🗓 Plan Test</button></div>
-  </section>
-  <section class="panel card planner-list-card"><div class="panel-heading"><div><h3>Upcoming tests</h3><small>Your planned CBQs</small></div><span class="planner-count" id="plannerCount">0</span></div><div id="plansList"></div></section>
-</div>
-</section>
-
-<script id="flashcardSeedData" type="application/json">
-[
-  {"id":"seed-01","question":"What is 2 + 2?","answer":"4"},
-  {"id":"seed-02","question":"How many days are in a week?","answer":"7"},
-  {"id":"seed-03","question":"What is the capital of France?","answer":"Paris"},
-  {"id":"seed-04","question":"What planet do we live on?","answer":"Earth"},
-  {"id":"seed-05","question":"What is the largest ocean on Earth?","answer":"The Pacific Ocean"},
-  {"id":"seed-06","question":"How many legs does a spider have?","answer":"8"},
-  {"id":"seed-07","question":"What gas do plants take in from the air?","answer":"Carbon dioxide"},
-  {"id":"seed-08","question":"What is the opposite of hot?","answer":"Cold"},
-  {"id":"seed-09","question":"How many months are in a year?","answer":"12"},
-  {"id":"seed-10","question":"What is the star at the center of our solar system?","answer":"The Sun"}
-]
-</script>
-
-<!-- SETTINGS -->
-<section id="flashcardsView" class="view">
-  <div class="dashboard flashcards-page">
-    <div class="dashhead"><div><div class="hero-kicker">ACTIVE RECALL</div><h1>Flashcards</h1><p>Create a deck of prompts and answers, then quiz yourself.</p></div></div>
-    <div class="flashcards-layout">
-      <section class="card flashcard-study">
-        <div class="flashcard-top"><span id="flashcardCount">No cards yet</span><button class="btn" type="button" onclick="shuffleFlashcards()">Shuffle</button></div>
-        <button id="flashcardFace" class="flashcard-face" type="button" onclick="flipFlashcard()" aria-live="polite"><span class="flashcard-label">QUESTION</span><span id="flashcardText">Add a card to get started</span><small>Click to reveal the answer</small></button>
-        <div class="flashcard-controls"><button class="btn" type="button" onclick="previousFlashcard()">← Previous</button><button class="btn primary" type="button" onclick="nextFlashcard()">Next →</button></div>
-      </section>
-      <section class="card flashcard-editor">
-        <h3>Add a flashcard</h3><label for="flashQuestion">Front · question or prompt</label><textarea id="flashQuestion" placeholder="What do you want to remember?"></textarea>
-        <label for="flashAnswer">Back · answer</label><textarea id="flashAnswer" placeholder="Write the answer or explanation"></textarea>
-        <button class="btn primary" type="button" onclick="addFlashcard()">＋ Add card</button>
-        <div class="flashcard-list-head"><strong>Your cards</strong><span id="flashcardTotal">0</span></div><div id="flashcardList" class="flashcard-list"></div>
-      </section>
-    </div>
-  </div>
-</section>
-
->>>>>>> origin/main
 <!-- SETTINGS -->
 <section id="settingsView" class="view">
 <div class="dashboard settings-page">
@@ -449,7 +430,7 @@
     <section class="setting card setting-duration"><h3>⏱ Default duration</h3><p>Used when a quiz does not specify a duration.</p><div class="setting-control"><select id="defaultDuration" onchange="saveSettings()"><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60">60 minutes</option></select></div></section>
     <section class="setting card keyboard-shortcuts-card" aria-label="Keyboard shortcuts"><h3>⌨️ Keyboard shortcuts</h3>
       <div class="shortcut-grid">
-        <div><span class="shortcut-keys"><kbd>Alt</kbd> + <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></span><span>Home / Exam / Settings</span></div>
+        <div><span class="shortcut-keys"><kbd>Alt</kbd> + <kbd>1</kbd>–<kbd>5</kbd></span><span>Home / Exam / Plan / Settings / Flashcards</span></div>
         <div><span class="shortcut-keys"><kbd>Alt</kbd> + <kbd>I</kbd></span><span>Import quiz</span></div>
         <div><span class="shortcut-keys"><kbd>Alt</kbd> + <kbd>S</kbd></span><span>Save session</span></div>
         <div><span class="shortcut-keys"><kbd>Shift</kbd> + <kbd>S</kbd></span><span>Submit quiz</span></div>
@@ -459,6 +440,7 @@
         <div><span class="shortcut-keys"><kbd>Shift</kbd> + <kbd>E</kbd> / <kbd>P</kbd></span><span>Exam / Practice mode</span></div>
         <div><span class="shortcut-keys"><kbd>G</kbd></span><span>Open question in ChatGPT</span></div>
         <div><span class="shortcut-keys"><kbd>C</kbd></span><span>Copy current question</span></div>
+        <div><span class="shortcut-keys"><kbd>F</kbd></span><span>Save a checked Practice or Results question as a flashcard</span></div>
         <div><span class="shortcut-keys"><kbd>V</kbd> · <kbd>R</kbd> · <kbd>P</kbd></span><span>View answer / review / question palette</span></div>
         <div><span class="shortcut-keys"><kbd>H</kbd> · <kbd>Esc</kbd></span><span>Home / close dialog</span></div>
       </div>
@@ -486,8 +468,7 @@
           <button class="btn" type="button" onclick="retryPersistentBackup()">Retry backup</button>
         </div>
       </div>
-      <p id="persistentStorageStatus" class="paste-status" role="status">Automatic local backup is enabled.</p>
-      <p id="persistentStorageCapacity" class="library-storage-help" aria-live="polite"></p>
+      <div class="library-storage-info"><p id="libraryStorageStatus" role="status">Loading library…</p><p id="libraryStorageUsage"></p><p id="libraryStorageCapacity"></p></div>
       <div id="dataImportStatus" class="paste-status" role="status">Import an ExamFlow backup exported from this app.</div>
     </section>
   </div>
@@ -518,6 +499,27 @@
 
 <div id="toast" class="toast"></div>
 
+<dialog id="cbqPreviewDialog" class="cbq-preview-dialog" aria-labelledby="cbqPreviewTitle" aria-describedby="cbqPreviewNote">
+  <div class="cbq-preview-heading"><h2 id="cbqPreviewTitle"></h2><button id="cbqPreviewClose" class="btn" type="button" aria-label="Close preview" title="Close (Esc)">×</button></div>
+  <p id="cbqPreviewNote" class="cbq-preview-accessible">Review only. No deck is saved. Your quiz progress stays unchanged. Space or Enter flips the card; arrow keys browse; Escape closes.</p>
+  <div class="cbq-preview-toolbar"><p id="cbqPreviewProgress" class="cbq-preview-position" role="status" aria-live="polite"></p><select id="cbqPreviewFilters" aria-label="Questions to review"></select></div>
+  <div id="cbqPreviewBody" class="fc-card-scene">
+    <div id="cbqPreviewCard" class="fc-flip-card">
+      <div id="cbqPreviewFrontPanel" class="fc-face fc-face-front" aria-label="Question"><div id="cbqPreviewFront"></div><img id="cbqPreviewImage" alt="Question illustration" hidden></div>
+      <div id="cbqPreviewBackPanel" class="fc-face fc-face-back" aria-label="Answer and explanation" inert aria-hidden="true"><div id="cbqPreviewBack"></div><div id="cbqPreviewSelected" class="cbq-preview-selected"></div></div>
+    </div>
+  </div>
+  <p id="cbqPreviewEmpty" class="cbq-preview-empty" hidden></p>
+  <div class="cbq-preview-navigation"><button id="cbqPreviewPrevious" type="button" class="btn" aria-label="Previous card" title="Previous (←)">←</button><button id="cbqPreviewFlip" type="button" class="btn primary" aria-pressed="false" title="Flip (Space / Enter)">Show answer</button><button id="cbqPreviewReviewed" type="button" class="btn" hidden>Reviewed</button><button id="cbqPreviewRestart" type="button" class="btn primary" hidden>Review again</button><button id="cbqPreviewNext" type="button" class="btn" aria-label="Next card or finish preview" title="Next (→)">→</button></div>
+</dialog>
+
+<script src="js/library-storage.js"></script>
+<script src="js/keyboard-shortcuts.js"></script>
+<script src="js/flashcards-core.js"></script>
+<script src="js/flashcard-library.js"></script>
+<script src="js/cbq-review-preview.js"></script>
+<script src="js/flashcards.js"></script>
+<script src="js/plan-review-queue.js"></script>
 <script src="prompt-lab.js"></script>
 <script src="app.js"></script>
 </body>

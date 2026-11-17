@@ -16,9 +16,29 @@
   const icon = name => '<svg class="ui-icon" aria-hidden="true"><use href="#icon-' + name + '"/></svg>';
   const button = (action, label, extra = '') => '<button class="btn" data-fc="' + action + '" ' + extra + '>' + label + '</button>';
   function notice(message, error = false) { if (!error) { $('fcNotice').hidden = true; toast(message); return; } $('fcNotice').hidden = false; $('fcNotice').textContent = message; $('fcNotice').classList.add('fc-error'); }
+  function migrateLegacy(cards) {
+    if (!Array.isArray(cards)) throw new Error('Invalid flashcard backup.');
+    if (!cards.length) return { version: 1, decks: [], session: null, activity: [] };
+    if (cards.length > C.MAX_CARDS) throw new Error('The saved flashcard list exceeds the advanced deck limit of ' + C.MAX_CARDS + ' cards.');
+    const parsed = {
+      name: 'My flashcards',
+      description: 'Cards migrated from your earlier ExamFlow library.',
+      cards: cards.map((card, index) => {
+        if (!card || typeof card.question !== 'string' || typeof card.answer !== 'string') {
+          throw new Error('Flashcard ' + (index + 1) + ' must contain a question and answer.');
+        }
+        return C.normalizeCard({ front: card.question, back: card.answer }, index);
+      })
+    };
+    return C.validateStore({ version: 1, decks: [C.createDeck(parsed)], session: null, activity: [] });
+  }
   function read() {
     const raw = QuizStorage.getItem(KEY);
-    state = raw ? C.validateStore(JSON.parse(raw)) : { version: 1, decks: [], session: null, activity: [] };
+    const stored = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(stored)) {
+      state = migrateLegacy(stored);
+      QuizStorage.setItem(KEY, JSON.stringify(state));
+    } else state = raw ? C.validateStore(stored) : { version: 1, decks: [], session: null, activity: [] };
     readFailed = false;
   }
   function save(next) {
@@ -328,7 +348,7 @@
     if(state.session&&!confirm('Start this review? Your card ratings are saved, but the current flashcard session will end.'))return;
     showView('flashcards');start(deck,'review');
   }
-  window.Flashcards = { refresh, renderLibrary, saveQuestion, studyDue, copyPrompt, handleKey, validateBackup: C.validateStore };
+  window.Flashcards = { refresh, renderLibrary, saveQuestion, studyDue, copyPrompt, handleKey, validateBackup: value => Array.isArray(value) ? migrateLegacy(value) : C.validateStore(value) };
   document.addEventListener('DOMContentLoaded', () => {
     $('flashcardsView').addEventListener('click', handle);
     $('fcJson').addEventListener('input', () => { pending = null; $('fcPreview').hidden = true; $('fcImportStatus').textContent = ''; });

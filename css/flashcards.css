@@ -1,7 +1,8 @@
 /* Flashcards use quiet surfaces and show controls only where they are needed. */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.ui-icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .save-flashcard { margin-top: 16px; }
 #flashcardsView { --fc-tint: color-mix(in srgb, var(--primary) 5%, var(--surface)); }
-body:has(#flashcardsView.active) { background: var(--bg); }
 #flashcardsView [hidden] { display: none !important; }
 .fc-page { width: 100%; max-width: 1080px; box-sizing: border-box; margin: 0 auto; padding: 28px clamp(14px,3vw,26px) 56px; }
 #flashcardsView :is(.fc-panel,.fc-deck,.fc-import-grid>div,.fc-preview,.fc-study-toolbar>div,.fc-review-card,.fc-card-scene,.fc-flip-card,.fc-face,.fc-front,.fc-back-content,.fc-complete) { min-width: 0; box-sizing: border-box; }
