@@ -2,6 +2,9 @@
 
 **ExamFlow** is a lightweight, browser-based study and quiz app built around **Concept Breakdown Quizzes (CBQs)**. It turns a topic into a sequence of questions learners can work through in Exam or Practice mode, then keeps their progress and preferences in the browser.
 
+- **Live app:** [Open ExamFlow on GitHub Pages](https://field-access.github.io/QuizManagement/)
+- **Source repository:** [field-access/QuizManagement](https://github.com/field-access/QuizManagement)
+
 ## Objectives
 
 - Make it easy to load a quiz from JSON or a file and begin studying.
@@ -12,12 +15,14 @@
 
 ## Team and contributions
 
-Team member names were not included in the repository. Replace the placeholders below with the project team's actual names and contributions before submitting or publishing this README.
+This project was developed for the SEC101: MCA group assignment, **Project Development Using Git, GitHub and Markdown**, in Advanced Tools and Applications.
 
 | Team member | Contribution |
 |---|---|
-| `[Member name]` | `[Describe their design, implementation, testing, or documentation work]` |
-| `[Member name]` | `[Describe their design, implementation, testing, or documentation work]` |
+| Nishant Sagar (Roll No. 41) | Worked on the `feature-member1` branch. Visible commit messages include quiz-page Markdown features and prompt-lab settings, continuing previous quizzes with inline LaTeX integration, and a README update. |
+| Tenzin Yangdon (Roll No. 76) | Worked on member 2 / flashcard changes. The repository history includes the `feature-member2` branch and a merge commit for member 2 flashcard changes. |
+
+The repository history also records merge commits for pull requests #1 and #2. Branch and commit evidence is summarized from the project team's submitted screenshots; those screenshots do not show individual PR review pages.
 
 ## Features
 
@@ -100,6 +105,14 @@ The app has no build step or package installation requirement. KaTeX and the sel
 
 4. Open [http://localhost:8000](http://localhost:8000) in your browser.
 5. On **Home**, paste a CBQ JSON document or choose a JSON file, then select **Load & Start**.
+
+## Git and GitHub collaboration
+
+The project was developed collaboratively using Git branches and GitHub. The submitted terminal history shows the `feature-member1` and `feature-member2` branches, remote feature branches, merge commits for pull requests #1 and #2, and merges of feature work into `main`. A commit graph was captured with `git log --oneline --graph --all`.
+
+The team also captured a merge-conflict episode involving project files, followed by use of the VS Code merge editor for `styles.css`. The available screenshots include both in-progress conflict output and the merge editor; they do not independently verify the final conflict-resolution commit or show the PR review pages. Add those GitHub screenshots if they are required as separate submission evidence.
+
+See the accompanying `CONTRIBUTING.md` for the team's branch, pull-request, and review workflow.
 
 To stop the server, focus its terminal and press **Ctrl+C**.
 
