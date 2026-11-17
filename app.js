@@ -2297,6 +2297,7 @@ function showView(name){
  if(resolvedName === "exam"){updateTimerUI();updateModeUI();}
  document.body.classList.toggle("exam-active",resolvedName==="exam");
  window.scrollTo({top:0,behavior:"smooth"});
+<<<<<<< HEAD
  ["home","exam","settings"].forEach(x=>{
   const el=document.getElementById(x+"View");
   if(el)el.classList.toggle("active",x===resolvedName);
@@ -2309,9 +2310,46 @@ function showView(name){
  if(resolvedName==="home"){renderHome();if(typeof renderTodos==='function')renderTodos();}
  if(resolvedName==="settings")updatePersistentStorageInfo();
  if(resolvedName==="exam"){setTimeout(()=>{applyQuestionSidebarState();syncExamTitleBar()},0)}
+=======
+ ["home","exam","dashboard","testResults","planner","flashcards","settings"].forEach(x=>document.getElementById(x+"View").classList.toggle("active",x===name));
+ ["navHome","navExam","navDashboard","navPlanner","navFlashcards","navSettings"].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove("active")});
+ if(name!=="testResults"){const nav=document.getElementById({home:"navHome",exam:"navExam",dashboard:"navDashboard",planner:"navPlanner",flashcards:"navFlashcards",settings:"navSettings"}[name]);if(nav)nav.classList.add("active")}
+ if(name==="home"){renderHome();if(typeof renderTodos==='function')renderTodos();}if(name==="dashboard"){renderDashboard();renderExamDeadline();}if(name==="planner")renderPlans();if(name==="exam"){setTimeout(()=>{applyQuestionSidebarState();syncExamTitleBar()},0)}
+ if(name==="settings"){const feedback=document.getElementById("instantFeedback");if(feedback)feedback.checked=!!settings.instantFeedback;
+ const duration=document.getElementById("defaultDuration");if(duration)duration.value=String(settings.defaultDuration||30);
+ const marks=document.getElementById("defaultMarks");if(marks)marks.value=settings.defaultMarks??1;
+ const negative=document.getElementById("defaultNegative");if(negative)negative.value=settings.defaultNegative??0;
+ updateTheme();updateModeUI()}
+ if(name==="flashcards")renderFlashcards();
+>>>>>>> origin/main
 }
 function toggleMobileNav(){document.body.classList.toggle("mobile-nav-open")}
 function closeMobileNav(){document.body.classList.remove("mobile-nav-open")}
+const flashcardSeedData=JSON.parse(document.getElementById("flashcardSeedData")?.textContent||"[]");
+let flashcards=get("examflow_flashcards_v1",[]),flashcardIndex=0,flashcardShowingAnswer=false;
+if(!Array.isArray(flashcards))flashcards=[];
+if(flashcards.length<10){for(const seed of flashcardSeedData){if(flashcards.length>=10)break;if(!flashcards.some(card=>card.id===seed.id))flashcards.push(seed)}saveFlashcards()}
+function saveFlashcards(){put("examflow_flashcards_v1",flashcards)}
+function addFlashcard(){
+ const question=document.getElementById("flashQuestion").value.trim(),answer=document.getElementById("flashAnswer").value.trim();
+ if(!question||!answer){toast("Add both a question and an answer");return}
+ flashcards.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),question,answer});flashcardIndex=flashcards.length-1;flashcardShowingAnswer=false;
+ document.getElementById("flashQuestion").value="";document.getElementById("flashAnswer").value="";saveFlashcards();renderFlashcards();toast("Flashcard added");
+}
+function renderFlashcards(){
+ const count=document.getElementById("flashcardCount"),total=document.getElementById("flashcardTotal"),text=document.getElementById("flashcardText"),label=document.querySelector(".flashcard-label"),list=document.getElementById("flashcardList");if(!count)return;
+ count.textContent=flashcards.length?`Card ${flashcardIndex+1} of ${flashcards.length}`:"No cards yet";total.textContent=flashcards.length;
+ const cardFace=document.getElementById("flashcardFace");
+ if(flashcards.length){const card=flashcards[flashcardIndex]||flashcards[0];text.textContent=flashcardShowingAnswer?card.answer:card.question;label.textContent=flashcardShowingAnswer?"ANSWER":"QUESTION";cardFace.style.setProperty("--flashcard-hue",String((flashcardIndex*36+12)%360))}else{text.textContent="Add a card to get started";label.textContent="QUESTION";cardFace.style.removeProperty("--flashcard-hue")}
+ list.innerHTML=flashcards.map((card,i)=>`<div class="flashcard-row" style="--flashcard-hue:${(i*36+12)%360}"><button type="button" class="flashcard-row-open" onclick="selectFlashcard(${i})">${escapeHtml(card.question)}</button><button type="button" class="flashcard-delete" aria-label="Delete flashcard" onclick="deleteFlashcard(${i})">×</button></div>`).join("");
+}
+function escapeHtml(value){const d=document.createElement("div");d.textContent=value;return d.innerHTML}
+function selectFlashcard(index){flashcardIndex=index;flashcardShowingAnswer=false;renderFlashcards()}
+function flipFlashcard(){if(!flashcards.length)return;flashcardShowingAnswer=!flashcardShowingAnswer;renderFlashcards()}
+function nextFlashcard(){if(!flashcards.length)return;flashcardIndex=(flashcardIndex+1)%flashcards.length;flashcardShowingAnswer=false;renderFlashcards()}
+function previousFlashcard(){if(!flashcards.length)return;flashcardIndex=(flashcardIndex-1+flashcards.length)%flashcards.length;flashcardShowingAnswer=false;renderFlashcards()}
+function shuffleFlashcards(){if(flashcards.length<2)return;for(let i=flashcards.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[flashcards[i],flashcards[j]]=[flashcards[j],flashcards[i]]}flashcardIndex=0;flashcardShowingAnswer=false;saveFlashcards();renderFlashcards()}
+function deleteFlashcard(index){flashcards.splice(index,1);flashcardIndex=Math.min(flashcardIndex,Math.max(0,flashcards.length-1));flashcardShowingAnswer=false;saveFlashcards();renderFlashcards()}
 function toast(s){const x=document.getElementById("toast");x.textContent=s;x.classList.add("show");clearTimeout(window.tt);window.tt=setTimeout(()=>x.classList.remove("show"),2200)}
 
 
