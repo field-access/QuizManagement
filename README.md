@@ -19,10 +19,15 @@ This project was developed for the SEC101: MCA group assignment, **Project Devel
 
 | Team member | Contribution |
 |---|---|
+<<<<<<< HEAD
 | Nishant Sagar (Roll No. 41) | Worked on the `feature-member1` branch. Visible commit messages include quiz-page Markdown features and prompt-lab settings, continuing previous quizzes with inline LaTeX integration, and a README update. |
 | Tenzin Yangdon (Roll No. 76) | Worked on member 2 / flashcard changes. The repository history includes the `feature-member2` branch and a merge commit for member 2 flashcard changes. |
 
 The repository history also records merge commits for pull requests #1 and #2. Branch and commit evidence is summarized from the project team's submitted screenshots; those screenshots do not show individual PR review pages.
+=======
+| `Nishant sagar ` | `[implemented json based quiz system, storage and settings page]` |
+| `Tenzin yangdon ` | `[impleneted flashcard system, helped in conflict resolution]` |
+>>>>>>> f2d26209e63f003c1a127446168ee8bbf574031f
 
 ## Features
 
