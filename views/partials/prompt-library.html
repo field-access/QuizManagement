@@ -1,0 +1,12 @@
+<section id="promptLibrary" class="prompt-settings-card">
+<div class="prompt-library-head"><h3>Prompt Lab</h3><details class="prompt-file-menu"><summary aria-label="Prompt library options" title="Prompt library options">⋯</summary><div><button class="btn" type="button" onclick="exportPromptLibrary()">Export JSON</button><label class="btn">Import JSON<input type="file" accept=".json,application/json" onchange="importPromptLibrary(event)" hidden></label></div></details></div>
+<div class="prompt-workspace">
+<div class="prompt-slot-sidebar" aria-label="Prompt slots"><div id="promptSlotList" class="prompt-slot-list"></div><button class="btn prompt-new-slot" type="button" onclick="addPromptSlot()">+ Experimental slot</button></div>
+<div class="prompt-edit-pane">
+<div class="prompt-name-row"><label for="promptSlotName">Name<input id="promptSlotName" class="prompt-library-edit" oninput="editPrompt()" placeholder="Name this prompt"></label><button id="deletePromptBtn" class="btn" type="button" onclick="deletePromptSlot()" title="Delete experimental slot">Delete</button></div>
+<label class="prompt-editor-label" for="seedPromptEditor">Prompt <span id="promptUsage"></span></label>
+<textarea id="seedPromptEditor" class="prompt-editor prompt-library-edit" rows="14" spellcheck="false" placeholder="Write your CBQ prompt here…" aria-describedby="seedPromptStatus" oninput="editPrompt()"></textarea>
+<div id="seedPromptStatus" class="prompt-status" role="status"></div>
+<div class="prompt-editor-actions"><button class="btn primary prompt-library-edit" type="button" onclick="savePrompt()">Save</button><button class="btn prompt-library-edit" type="button" onclick="copyEditedPrompt()">Copy</button><button id="restorePromptBtn" class="btn" type="button" onclick="restoreOriginalPrompt()">Restore original</button></div>
+</div></div>
+</section>
