@@ -16,8 +16,8 @@ Team member names were not included in the repository. Replace the placeholders 
 
 | Team member | Contribution |
 |---|---|
-| `[Member name]` | `[Describe their design, implementation, testing, or documentation work]` |
-| `[Member name]` | `[Describe their design, implementation, testing, or documentation work]` |
+| `Nishant sagar ` | `[implemented json based quiz system, storage and settings page]` |
+| `Tenzin yangdon ` | `[impleneted flashcard system, helped in conflict resolution]` |
 
 ## Features
 
