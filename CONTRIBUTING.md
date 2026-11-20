@@ -6,8 +6,8 @@ ExamFlow was developed collaboratively for the SEC101: MCA assignment, **Project
 
 | Contributor | Roll number | Branch and documented work |
 |---|---:|---|
-| Nishant Sagar | 41 | Worked on `feature-member1`. Visible commit messages include a quiz-page upgrade with Markdown features and Prompt Lab in Settings, continuing previous quizzes with inline LaTeX integration, and a README update. |
-| Tenzin Yangdon | 76 | Worked on member 2 / flashcard changes. The captured history shows `feature-member2` and a merge commit titled “Merge member 2 flashcard changes.” |
+| Nishant Sagar | 41 | Worked on `feature-member1`.  a quiz-page upgrade with Markdown features and Prompt Lab in Settings, continuing previous quizzes with inline LaTeX integration, and a README update. |
+| Tenzin Yangdon | 76 | Worked on `feature-member2` / flashcard changes. save to flashcard from quiz questions. | Worked on prompt settings| backup and json download options| contributing.md updates|
 
 These descriptions reflect the branch names and commit messages visible in the team's submitted Git screenshots. They should not be read as an exhaustive allocation of every code change.
 
