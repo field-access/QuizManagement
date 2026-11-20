@@ -1,0 +1,26 @@
+# Local development artifacts
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor and IDE settings
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+*.tmp
+*.temp
+
+# Local environment secrets
+.env
+.env.*
+!.env.example
+
+# Generated report and preview images
+ExamFlow_GitHub_Collaboration_Report.pdf
+reportpage-*.png
+contact.png
